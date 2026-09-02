@@ -2,6 +2,10 @@
 
 # otogit — תשתית אוטומציה לסוכני AI
 
+[![tests](https://github.com/NadavOked/otogit/actions/workflows/tests.yml/badge.svg)](https://github.com/NadavOked/otogit/actions/workflows/tests.yml)
+[![gitleaks](https://github.com/NadavOked/otogit/actions/workflows/gitleaks.yml/badge.svg)](https://github.com/NadavOked/otogit/actions/workflows/gitleaks.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 כלים שמאפשרים לסוכני AI לעבוד על ריפו **בלי שאדם יושב מעליהם** —
 ובלי שהם יוכלו לשבור משהו בשקט.
 

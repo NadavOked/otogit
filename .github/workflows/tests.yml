@@ -1,0 +1,60 @@
+# חבילת הבדיקות. הכלים כאן אמורים לרוץ על ריפו של מישהו אחר, ולכן
+# בדיקה שלא רצה כאן היא בדיקה שתתגלה אצלו.
+
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# על push ה-SHA נכנס לשם הקבוצה, אחרת GitHub מרשה ריצה ממתינה אחת
+# בלבד וכל דחיפה דוחקת את קודמתה — קומיט שנראה תקין בלי שנבדק.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install pytest
+      - name: pytest — דילוג נחשב כישלון
+        run: |
+          set -euo pipefail
+          python -m pytest tests -q -p no:randomly --strict-markers \
+            | tee /tmp/out.txt
+          if grep -qE '[0-9]+ skipped' /tmp/out.txt; then
+            echo "::error::טסטים דולגו. דילוג אינו הצלחה."
+            exit 1
+          fi
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v7
+      - run: shellcheck --version
+      - name: כל קובץ מעטפת — הסוג נגזר מה-shebang
+        run: |
+          set -euo pipefail
+          found=0
+          while IFS= read -r f; do
+            found=$((found+1))
+            if head -1 "$f" | grep -q bash; then sh=bash; else sh=sh; fi
+            echo "== $f ($sh)"
+            shellcheck -s "$sh" --severity=warning "$f"
+          done < <(find . -name '*.sh' -not -path './.git/*')
+          # אפס קבצים אינו "הכול נקי" — הוא בדיקה שלא רצה.
+          [ "$found" -gt 0 ] || { echo "::error::לא נמצא אף קובץ .sh"; exit 1; }
+          echo "נסרקו $found קבצים"
