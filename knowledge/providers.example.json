@@ -1,0 +1,117 @@
+{
+  "_": [
+    "דוגמה. המספרים נמדדים על המכונה שלכם ואינם נכתבים ביד.",
+    "כל ערך נושא source: measured או unknown. unknown אינו זמינות."
+  ],
+  "updated": "2026-09-02",
+  "providers": {
+    "gemini": {
+      "paid": false,
+      "billing_enabled": false,
+      "note_he": "‏Free tier. חריגה חוסמת ואינה מחייבת. רגיש מאוד לקצב.",
+      "models": {
+        "gemini-3.1-flash-lite": {
+          "in_use_by": [
+            "agent-review",
+            "idea-refine",
+            "log-review"
+          ],
+          "rpm": 15,
+          "rpd": 500,
+          "tpm": 250000,
+          "source": "measured"
+        },
+        "gemini-3.6-flash": {
+          "in_use_by": [],
+          "rpm": 5,
+          "rpd": 20,
+          "tpm": 250000,
+          "source": "measured",
+          "note_he": "‏השיא שנרשם היה 24 מתוך 20 ליום — התקרה נפרצה."
+        },
+        "gemini-3-flash": {
+          "in_use_by": [],
+          "rpm": 5,
+          "rpd": 20,
+          "tpm": 250000,
+          "source": "measured",
+          "note_he": "‏השיא שנרשם היה 23 מתוך 20 ליום."
+        }
+      },
+      "on_429": {
+        "wait_seconds": 75,
+        "max_attempts": 4,
+        "source": "judgement"
+      },
+      "serialize": true,
+      "reports_remaining_quota": false
+    },
+    "grok": {
+      "paid": true,
+      "billing_enabled": false,
+      "note_he": "‏מנוי $30 עד 20/09/2026. סכום קבוע — חוסם ואינו מחייב מעבר לו.",
+      "models": {
+        "grok": {
+          "rpm": null,
+          "rpd": null,
+          "source": "unknown"
+        }
+      },
+      "serialize": true,
+      "reports_remaining_quota": false
+    },
+    "codex": {
+      "paid": true,
+      "billing_enabled": false,
+      "note_he": "‏מנוי $20. OPENAI_API_KEY ריק — אינו יכול לחייב לפי שימוש.",
+      "models": {
+        "gpt-5.6-sol": {
+          "rpm": null,
+          "rpd": null,
+          "source": "unknown"
+        }
+      },
+      "serialize": true,
+      "reports_remaining_quota": false
+    },
+    "ollama": {
+      "paid": false,
+      "billing_enabled": false,
+      "note_he": "‏מקומי. אין מגבלת קצב, אין תקרה יומית, ואין עלות. נמדד: ‏llama3.2:3b עונה ב-0.7 שנ' — מהיר דיו לסיווג וטריאז'. הגדולים דורשים ~30 שנ' טעינה בכל קריאה קרה.",
+      "models": {
+        "<שם-המודל>": {
+          "rpm": null,
+          "rpd": null,
+          "source": "n/a",
+          "tokens_per_second": null,
+          "benchmark": "הריצו tools/bench-local.py --write"
+        }
+      },
+      "serialize": false,
+      "reports_remaining_quota": false,
+      "recommended_for": [
+        "classification",
+        "triage",
+        "labelling"
+      ],
+      "benchmark_tool": "tools/agents/bench-local.py",
+      "_measurement_warning_he": "‏המספרים כאן נמדדו על מכונה מסוימת ובתאריך שברשומה. הם אינם תכונה של המודל אלא של הצירוף מודל+מכונה — חומרה מתחלפת והמספרים הישנים ממשיכים להיראות כמו עובדה. הריצו bench-local.py --write, אל תערכו ידנית.",
+      "_sample_size_warning_he": "‏classified_correctly הוא **דגימה אחת**. באותו יום, qwen2.5-coder:7b טעה בריצה אחת וצדק בשנייה — אותו מודל, אותו פרומפט. אין להסיק ממנו על איכות; הוא רק סימן שהמודל בכלל עונה בפורמט הנכון."
+    }
+  },
+  "routing": {
+    "_": [
+      "סדר העדפה. משימה הולכת לשכבה הראשונה שמסוגלת לה, ויורדת ברשימה",
+      "רק כשהיא אינה מסוגלת — לא כשנוח יותר. הנימוק: מקומי אינו עולה",
+      "ואינו נחסם; tier חינמי אינו עולה אך תקוע בתקרה יומית; מנוי עולה",
+      "כסף קבוע; והמתאם הוא המשאב היקר ביותר."
+    ],
+    "order": [
+      "ollama",
+      "gemini",
+      "codex_or_grok",
+      "claude"
+    ],
+    "decided_on": "2026-09-02"
+  }
+}
