@@ -74,3 +74,36 @@ def test_a_directory_that_does_not_exist_is_named():
     proj = _run(["--list"]).stdout.split()[0]
     d = json.loads(_run(["--project", proj, "--json"]).stdout)
     assert isinstance(d["missing"], list)
+
+
+def test_a_sibling_project_never_leaks_in(tmp_path):
+    """‏6 ריפואים, 2 ציבוריים ו-4 פרטיים.
+
+    קובץ של פרויקט אחד אינו אמור להגיע לסוכן שעובד על אחר — במיוחד
+    כשחלקם פרטיים. זו דרישת בידוד, לא נוחות, ולכן היא נבדקת ולא
+    מונחת.
+    """
+    for d in ("knowledge", "projects/a/knowledge", "projects/b/knowledge",
+              "tools"):
+        (tmp_path / d).mkdir(parents=True)
+    (tmp_path / "knowledge" / "shared.md").write_text("כללי", encoding="utf-8")
+    (tmp_path / "projects" / "a" / "knowledge" / "only-a.md").write_text(
+        "של א", encoding="utf-8")
+    (tmp_path / "projects" / "b" / "knowledge" / "SECRET-B.md").write_text(
+        "של ב בלבד", encoding="utf-8")
+    (tmp_path / "tools" / "resolve.py").write_text(
+        RESOLVE.read_text(encoding="utf-8"), encoding="utf-8")
+
+    e = dict(os.environ, PYTHONIOENCODING="utf-8")
+    p = subprocess.run([sys.executable, str(tmp_path / "tools" / "resolve.py"),
+                        "--project", "a", "--json"],
+                       capture_output=True, text=True, encoding="utf-8",
+                       timeout=60, env=e, stdin=subprocess.DEVNULL)
+    assert p.returncode == 0, p.stderr[:300]
+    blob = p.stdout
+    assert "only-a.md" in blob, "הקובץ של הפרויקט עצמו לא הגיע"
+    assert "shared.md" in blob, "השכבה הכללית לא הגיעה"
+    assert "SECRET-B.md" not in blob, (
+        "קובץ של פרויקט אחר דלף לתוצאה — זו בדיוק ההפרה שהבידוד "
+        "אמור למנוע")
+    assert "projects/b" not in blob, "נתיב של פרויקט אחר הופיע בתוצאה"
