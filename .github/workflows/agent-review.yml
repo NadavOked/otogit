@@ -81,14 +81,31 @@ jobs:
           PY
 
       - name: Ask Gemini
+        id: ask
         env:
           KEY: ${{ secrets.GEMINI_API_KEY }}
+          EXPECTED: ${{ vars.REVIEW_ENABLED }}
         run: |
           set -euo pipefail
+          # ‏GitHub אינו מבחין בין סוד שלא הוגדר מעולם לסוד שנמחק,
+          # ולכן הכוונה מוצהרת בנפרד: משתנה הריפו REVIEW_ENABLED.
+          # אין הצהרה → הריפו הזה לא הבטיח סקירה, והדילוג גלוי (absent).
+          # יש הצהרה ואין מפתח → משהו נשבר, וזה אדום (broken).
           if [ -z "$KEY" ]; then
-            echo "::error::הסוד GEMINI_API_KEY אינו מוגדר — הסקירה לא רצה. זו שגיאה גלויה בכוונה, לא דילוג שקט."
-            exit 1
+            if [ "$EXPECTED" = "true" ]; then
+              echo "::error::‏REVIEW_ENABLED=true אבל הסוד GEMINI_API_KEY ריק — הובטחה סקירה ואין מפתח. זו תקלה, לא בחירה."
+              exit 1
+            fi
+            echo "::warning::הסקירה לא רצה — אין GEMINI_API_KEY וגם לא הובטחה (REVIEW_ENABLED לא הוגדר)."
+            {
+              echo "## ⚠ הסקירה לא רצה"
+              echo "אין \`GEMINI_API_KEY\` בריפו הזה. **זה אינו 'נסקר ונמצא תקין'** — זה 'לא נסקר'."
+              echo "להפעלה: \`gh secret set GEMINI_API_KEY\` ואז \`gh variable set REVIEW_ENABLED --body true\` — ומאותו רגע מפתח ריק יהיה אדום."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "ran=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          echo "ran=true" >> "$GITHUB_OUTPUT"
           # ‏503/5xx של הספק הם תקלה זמנית, לא ממצא. בלי ניסיון חוזר כל
           # ‏PR נצבע אדום בגלל רעש אצל גוגל — ואז אדום מפסיק להיות אות.
           # קרה בפועל על #222: `curl: (22) ... error: 503`.
@@ -136,6 +153,8 @@ jobs:
           echo "usage: $(cat /tmp/usage.txt)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Post the review
+        # דילוג מוצהר אינו סקירה — אין קובץ לפרסם, ואין מה להאדים.
+        if: steps.ask.outputs.ran == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
