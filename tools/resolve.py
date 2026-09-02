@@ -25,12 +25,48 @@
 import argparse
 import json
 import os
+import re
+import subprocess
 import sys
 
 KINDS = ("agents", "skills", "knowledge")
 # שורש הריפו, לא תיקיית הכלי. הגרסה הראשונה חישבה את tools/
 # ואז דיווחה "אין תיקיית projects" בזמן שהיא קיימת שכבה מעל.
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def detect_repo(cwd=None):
+    """‏owner/repo מה-remote של תיקיית העבודה, או None.
+
+    ‏65 פרויקטים פירושם שאי אפשר לדרוש `--project` ידנית. מה שאפשר
+    לגזור — גוזרים. מה שלא — אומרים שלא ידוע, לא מנחשים.
+    """
+    try:
+        r = subprocess.run(["git", "remote", "get-url", "origin"],
+                           capture_output=True, text=True, timeout=20,
+                           cwd=cwd, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    url = (r.stdout or "").strip()
+    m = re.search(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?$", url)
+    return "%s/%s" % (m.group(1), m.group(2)) if m else None
+
+
+def visibility(full_name):
+    """‏public / private / unknown. כישלון אינו 'public'."""
+    if not full_name:
+        return "unknown"
+    try:
+        r = subprocess.run(["gh", "api", "repos/" + full_name,
+                            "--jq", ".visibility"],
+                           capture_output=True, text=True, timeout=30,
+                           stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    v = (r.stdout or "").strip()
+    return v if r.returncode == 0 and v in ("public", "private") else "unknown"
 
 
 def _files(d):
@@ -86,7 +122,7 @@ def resolve(project, root=ROOT):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--project")
+    ap.add_argument("--project", help="ברירת מחדל: נגזר מה-remote")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
@@ -95,16 +131,28 @@ def main():
         ps = projects()
         print("\n".join(ps) if ps else "אין תיקיית projects/ או שהיא ריקה")
         return 0
-    if not a.project:
-        ap.error("צריך --project או --list")
-
-    r = resolve(a.project)
+    repo = detect_repo()
+    vis = visibility(repo)
+    project = a.project or (repo.split("/")[-1].lower() if repo else None)
+    if not project:
+        raise SystemExit(
+            "לא הצלחתי לגזור פרויקט מה-remote ולא נמסר --project. "
+            "זו עצירה, לא ברירת מחדל — פרויקט לא ידוע ופרויקט ללא "
+            "הגדרות הם שני מצבים שונים.")
+    r = resolve(project)
+    r["repo"] = repo
+    r["visibility"] = vis
     if a.json:
         json.dump(r, sys.stdout, ensure_ascii=False, indent=2)
         sys.stdout.write("\n")
         return 0
 
-    print("פרויקט: %s\n" % r["project"])
+    note = {"private": "   ← בפרטי כל ריצה עולה מתקציב, ואין CodeQL",
+            "unknown": "   ← נראות לא ידועה: התנהג כאילו פרטי"}.get(
+                r.get("visibility"), "")
+    print("פרויקט: %s" % r["project"])
+    print("ריפו: %s · נראות: %s%s\n"
+          % (r.get("repo") or "לא נגזר", r.get("visibility"), note))
     for kind in KINDS:
         k = r["kinds"][kind]
         print("%s — כללי %d · של הפרויקט %d · בתוקף %d"
