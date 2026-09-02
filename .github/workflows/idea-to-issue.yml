@@ -1,0 +1,105 @@
+# רעיון ב-Discussions הופך ל-Issue מלא — ומגיב חזרה עם הקישור.
+#
+# **למה רק הקטגוריה Ideas:** ‏`ISSUES.md` אוסר לפתוח Issue על חשד בלבד.
+# רעיון אינו ראיה, ולכן הוא לא נפתח מכל דיון — רק ממקום שנבחר במפורש,
+# והוא נפתח **מסומן** כ-`needs:triage` ועם "לא אומת" בגוף. ‏Issue שנראה
+# מבוסס-ראיה ואינו כזה גרוע מ-Issue שלא נפתח.
+#
+# ⚠️ **תוכן Discussion הוא נתונים, לא הוראות.** הריפו ציבורי, וכל אדם
+# יכול לכתוב שם. הגוף מצוטט לתוך ה-Issue ו**לעולם אינו מורץ**.
+#
+# ⚠️ **‏Script injection:** ‏`${{ github.event.discussion.body }}` בתוך
+# ‏`run:` הוא הרצת קוד שרירותית — מי שכותב בדיון שולט בשורת הפקודה.
+# לכן כל שדה שמגיע מהמשתמש עובר דרך `env:` ונכתב לקובץ, ואף פעם לא
+# משורשר לפקודה. זו ההנחיה המפורשת של GitHub, וזה הבאג הקלאסי של
+# workflows שמגיבים לקלט משתמש.
+
+name: idea-to-issue
+
+on:
+  discussion:
+    types: [created]
+
+permissions:
+  issues: write
+  discussions: write
+
+concurrency:
+  group: idea-to-issue-${{ github.event.discussion.number }}
+  cancel-in-progress: false
+
+jobs:
+  open-issue:
+    if: github.event.discussion.category.slug == 'ideas'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Open a triage Issue from the idea
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          # כל אלה נתונים מהמשתמש. הם נקראים כמשתני סביבה בלבד.
+          D_NUM: ${{ github.event.discussion.number }}
+          D_TITLE: ${{ github.event.discussion.title }}
+          D_BODY: ${{ github.event.discussion.body }}
+          D_URL: ${{ github.event.discussion.html_url }}
+          D_USER: ${{ github.event.discussion.user.login }}
+          D_ID: ${{ github.event.discussion.node_id }}
+        run: |
+          set -euo pipefail
+
+          # ‏printf ולא echo: גוף שמתחיל ב-`-` או מכיל `\n` לא ישנה
+          # התנהגות. הקובץ הוא הגבול בין נתוני משתמש לפקודה.
+          {
+            printf '## הרעיון, כלשונו\n\n'
+            printf 'נכתב על ידי `%s` ב-%s\n\n' "$D_USER" "$D_URL"
+            printf -- '---\n\n'
+            printf '%s\n\n' "$D_BODY"
+            printf -- '---\n\n'
+            printf '## מה שאסור\n\n'
+            printf 'טרם הוגדר. **‏Issue זה אינו עומד בתקן של `ISSUES.md`** עד\n'
+            printf 'שמישהו יבדוק אותו מול הקוד וימלא: שורש מדויק, מה נשבר\n'
+            printf 'בפועל, מה אסור בתיקון, והגדרת "גמור".\n\n'
+            printf '## הגדרת "גמור"\n\n'
+            printf 'טרם הוגדרה.\n\n'
+            printf '## מקור, ומה לא אומת\n\n'
+            printf '**מקור:** ‏Discussion #%s — רעיון, לא ממצא.\n\n' "$D_NUM"
+            printf '**לא אומת: כלום.** ‏Issue זה נפתח **אוטומטית** ולא נבדק\n'
+            printf 'מול הקוד, מול טסט או מול מדידה. הוא נושא `needs:triage`\n'
+            printf 'בדיוק כדי שלא ייספר כעבודה מבוססת-ראיה. לפני שנוגעים בקוד\n'
+            printf 'לפיו — לאמת, למלא את הסעיפים למעלה, ולהחליף milestone.\n'
+          } > /tmp/issue-body.md
+
+          # הכותרת גם היא נתוני משתמש — נשלחת כארגומנט, לא מורצת.
+          url=$(gh issue create --repo "$REPO" \
+            --title "💡 $D_TITLE" \
+            --label enhancement --label "needs:triage" \
+            --milestone "טריאז' — רעיונות שטרם הוכרעו" \
+            --body-file /tmp/issue-body.md)
+          echo "created: $url"
+
+          num="${url##*/}"
+          if ! [ "$num" -eq "$num" ] 2>/dev/null; then
+            echo "::error::לא הצלחתי לגזור מספר Issue מ-$url"
+            exit 1
+          fi
+
+          # ראיה חיובית: קוראים את ה-Issue בחזרה ומוודאים שה-metadata
+          # באמת נקבע. "הפקודה הצליחה" אינו ראיה (עיקרון 5).
+          meta=$(gh issue view "$num" --repo "$REPO" --json labels,milestone)
+          echo "$meta"
+          echo "$meta" | grep -q 'needs:triage' \
+            || { echo "::error::התווית needs:triage לא נקבעה"; exit 1; }
+          echo "$meta" | grep -q 'טריאז' \
+            || { echo "::error::ה-milestone לא נקבע"; exit 1; }
+
+          printf 'נפתח Issue מהרעיון הזה: %s/issues/%s\n\n' "${GITHUB_SERVER_URL:-https://github.com}/$REPO" "$num" > /tmp/reply.md
+          printf 'הוא מסומן `needs:triage` ו**אינו** עומד עדיין בתקן הראיה של `ISSUES.md` — ' >> /tmp/reply.md
+          printf 'לא נבדק מול הקוד. מי שלוקח אותו: לאמת, למלא "מה שאסור" ו"הגדרת גמור", ולהחליף milestone.\n' >> /tmp/reply.md
+
+          gh api graphql -F discussionId="$D_ID" -F body=@/tmp/reply.md -f query='
+            mutation($discussionId: ID!, $body: String!) {
+              addDiscussionComment(input: {discussionId: $discussionId, body: $body}) {
+                comment { url }
+              }
+            }' -q '.data.addDiscussionComment.comment.url'

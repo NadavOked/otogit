@@ -1,0 +1,90 @@
+# דוח הבוקר של הסוכנים — נכתב ללוח הדיונים (#212) כל בוקר, בלי אדם.
+#
+# עונה על השאלה שבעל הריפו שואל כל בוקר ממילא: מה ירוק, מה ממתין למי,
+# והאם משהו נשבר בלילה. עובדות בלבד, מ-API — לא ניתוח של מודל.
+# הריצה הלילית (nightly.yml) בודקת את הקוד; הדוח הזה בודק את המצב.
+
+name: agent-daily
+
+on:
+  schedule:
+    - cron: "30 4 * * *"    # ‏07:30 שעון ישראל (קיץ)
+  workflow_dispatch: {}      # ולהרצה ידנית לבדיקה
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+  discussions: write
+  actions: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Build and post the report
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BOARD: "212"   # השרשור הקבוע: לוח הסוכנים
+        run: |
+          set -euo pipefail
+
+          main_sha=$(gh api "repos/$REPO/commits/main" -q '.sha')
+          checks=$(gh api "repos/$REPO/commits/$main_sha/check-runs" \
+            -q '[.check_runs[] | select(.conclusion != "success")] | length')
+          total=$(gh api "repos/$REPO/commits/$main_sha/check-runs" -q '.total_count')
+          if [ "$total" -eq 0 ]; then
+            main_line="⚠️ **אפס בדיקות על main** — לא ניתן לקבוע ירוק/אדום (וזה כשל, לא הצלחה)"
+          elif [ "$checks" -eq 0 ]; then
+            main_line="✅ ‏main ירוק (‏$total בדיקות, ‏${main_sha:0:7})"
+          else
+            main_line="🔴 **‏main אדום** — ‏$checks מתוך $total בדיקות לא עברו (‏${main_sha:0:7})"
+          fi
+
+          prs=$(gh pr list --repo "$REPO" --state open --json number,title,statusCheckRollup \
+            -q 'map({n: .number, t: .title,
+                     bad: ([.statusCheckRollup[]? | select(.conclusion != null and .conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED")] | length)})
+                | "‏PRs פתוחים: \(length) · ירוקים: \([.[] | select(.bad == 0)] | length)\n" +
+                  ([.[] | select(.bad > 0) | "- 🔴 #\(.n) \(.t)"] | join("\n"))')
+
+          ready=$(gh issue list --repo "$REPO" --label "agent:ready" --state open --json number -q 'length')
+          claimed=$(gh issue list --repo "$REPO" --label "agent:claimed" --state open --json number,title \
+            -q 'map("- 🔒 #\(.n // .number) \(.title)") | join("\n")')
+          triage=$(gh issue list --repo "$REPO" --label "needs:triage" --state open --json number -q 'length')
+
+          # ‏gh יוצא 0 גם על רשימה ריקה — "אין ריצות" חייב להיבדק בתוך
+          # ה-jq, אחרת ריק מוצג כ"רץ עכשיו (null)". ממצא של הסוקר
+          # האוטומטי על ה-PR הזה עצמו; אומת (jq על [] ועל רשומה) ותוקן.
+          nightly=$(gh run list --repo "$REPO" --workflow nightly --limit 1 \
+            --json conclusion,createdAt \
+            -q 'if length == 0 then "אין ריצות" else .[0] | "\(.conclusion // "רץ עכשיו") (\(.createdAt))" end')
+
+          {
+            echo "## ☀️ דוח בוקר — $(date -u +%Y-%m-%d)"
+            echo
+            echo "$main_line"
+            echo
+            echo "$prs"
+            echo
+            echo "**ריצה לילית:** $nightly"
+            echo
+            echo "**תור הסוכנים:** ‏$ready מוכנים (\`agent:ready\`) · ‏$triage ממתינים לטריאז'"
+            [ -n "$claimed" ] && echo "$claimed"
+            echo
+            echo "_נוצר אוטומטית. עובדות מ-API, לא ניתוח._"
+          } > /tmp/report.md
+
+          disc_id=$(gh api graphql -F owner="${REPO%%/*}" -F name="${REPO##*/}" -F number="$BOARD" \
+            -q '.data.repository.discussion.id' -f query='
+            query($owner:String!,$name:String!,$number:Int!){
+              repository(owner:$owner,name:$name){ discussion(number:$number){ id } } }')
+          [ -n "$disc_id" ] || { echo "::error::לוח הסוכנים #$BOARD לא נמצא"; exit 1; }
+          url=$(gh api graphql -F discussionId="$disc_id" -F body=@/tmp/report.md \
+            -q '.data.addDiscussionComment.comment.url' -f query='
+            mutation($discussionId:ID!,$body:String!){
+              addDiscussionComment(input:{discussionId:$discussionId,body:$body}){
+                comment{ url } } }')
+          [ -n "$url" ] || { echo "::error::הדוח לא פורסם — המוטציה חזרה ריקה"; exit 1; }
+          echo "posted: $url"

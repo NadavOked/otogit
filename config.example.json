@@ -1,0 +1,43 @@
+{
+  "_comment": "העתק ל-~/.otogit.json וערוך. שום ערך כאן אינו סוד — מפתחות חיים במשתני סביבה בלבד.",
+
+  "repo": "owner/repo",
+
+  "discussions": {
+    "board": 0,
+    "decisions": 0,
+    "ideas_category": "ideas"
+  },
+
+  "agents": {
+    "grok":   { "bin": "%USERPROFILE%\.grok\bin\grok.exe", "flags": ["--output-format", "json"], "key_env": null },
+    "codex":  { "bin": "%APPDATA%\npm\codex.cmd", "flags": ["exec", "--json"], "key_env": null },
+    "gemini": { "endpoint": "https://generativelanguage.googleapis.com/v1beta/models", "model": "gemini-3.6-flash", "key_env": "GEMINI_KEY_1" }
+  },
+
+  "local_models": {
+    "runtime": "ollama",
+    "models_dir": "D:\ollama\models",
+    "host": "http://localhost:11434",
+    "min_free_gb": 30,
+    "roles": {
+      "triage":  "llama3.2:3b",
+      "code":    "qwen2.5-coder:7b",
+      "deep":    "mixtral:8x7b",
+      "embed":   "nomic-embed-text"
+    }
+  },
+
+  "paths": {
+    "state_file": "%USERPROFILE%\.otogit-agents.json",
+    "logs_dir":   "logs",
+    "runner_logs": "%USERPROFILE%\otogit-runner-logs"
+  },
+
+  "quota_reset": {
+    "_comment": "מתי מכסה מתאפסת. הקירור מחושב מזה ולא מנוחש.",
+    "gemini": "daily-midnight-pacific",
+    "codex":  "5h-rolling",
+    "grok":   "6h-probe"
+  }
+}
