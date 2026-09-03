@@ -1,0 +1,150 @@
+# הצי החינמי — LiteLLM proxy: endpoint אחד תואם-OpenAI לכל הספקים.
+#
+# ⚠️ hard $0 — הדרישה החשובה ביותר של הבעלים: אין כאן אף ספק בתשלום,
+# ואין fallback אל מחוץ לקובץ הזה. הטסט test_free_fleet.py אוכף
+# את זה מבנית: כל מודל חייב קידומת מהרשימה החינמית, וכל מפתח חייב
+# להיות הפניית os.environ/ — לעולם לא ערך.
+#
+# התקרות ליד כל ספק הן owner-reported (‏2026-09-02, מהטבלה של הבעלים)
+# — עד מדידה. מודל בלי שם מפורש מהבעלים מסומן unmeasured ויאומת בקריאה
+# הראשונה.
+#
+# הפעלה: tools/agents/free-fleet.ps1 (טוען .env ומרים על :4000)
+
+model_list:
+  # --- מקומי: השכבה הראשונה בסדר של הבעלים ------------------------
+  # ‏routing.order ב-providers.json פותח ב-ollama, והוא לא היה מחובר
+  # לשום דבר: ‏10 מודלים על הדיסק ואף כלי שמנתב אליהם. הלילה של
+  # ‏02/09 נשרפו ~65K טוקנים של Codex על טריאף וסיווג — משימות
+  # ש-`ollama.recommended_for` מצהיר עליהן במפורש.
+  #
+  # מקומי אינו "עוד ספק חינמי": אין לו מכסה, אין 429, ואין מה
+  # לספור — ולכן `fleet_budget` לא מוצא לו תקרה ולא חוסם אותו.
+  # אין `api_key` בכוונה; ‏api_base הוא loopback.
+  - model_name: local
+    litellm_params:
+      model: ollama_chat/llama3.2:3b     # נמדד 02/09: ‏4.4 שנ' לסיווג, תשובה נכונה
+      api_base: http://127.0.0.1:11434
+      timeout: 120                       # טעינה קרה של המודל נמדדה ב-3.1 שנ'
+  - model_name: local-code
+    litellm_params:
+      model: ollama_chat/qwen2.5-coder:7b  # נמדד 02/09: ‏9.5 שנ', תשובה נכונה
+      api_base: http://127.0.0.1:11434
+      timeout: 300                       # ‏7b על CPU — איטי אך ללא תקרה
+
+  # --- קלט גדול: סריקות, קריאת קבצים ---------------------------
+  - model_name: big-context
+    litellm_params:
+      model: groq/groq/compound         # נמדד מ-/models · 250 req/יום · 70K TPM · ZDR
+      api_key: os.environ/GROQ_API_KEY
+      rpm: 20                           # שוליים מתחת לספק — שיחה אחת לא תגמור יום
+      tpm: 60000
+  - model_name: big-context
+    litellm_params:
+      model: nvidia_nim/deepseek-ai/deepseek-v4-pro-0813  # נמדד · ‏40 RPM · הקשר 1M
+      api_key: os.environ/NVIDIA_NIM_API_KEY
+      rpm: 30                           # הספק: 40 — שוליים
+      timeout: 420                      # תור free tier — נמדדו דקות בעומס
+  - model_name: big-context
+    litellm_params:
+      model: nvidia_nim/moonshotai/kimi-k3               # נמדד · ‏40 RPM · הקשר 1M
+      api_key: os.environ/NVIDIA_NIM_API_KEY
+      timeout: 420
+  - model_name: big-context
+    litellm_params:
+      # ‏OpenRouter: אך ורק מודלים עם סיומת :free — יש שם גם בתשלום,
+      # והטסט אוכף את הסיומת. הקרדיט בחשבון מוצה (נמדד) ולא מוסיפים.
+      model: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free  # נמדד OR-OK · ‏550B · ‏ctx 1M
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  # --- קצר ומרובה: תיוג, סיווג, הודעות קומיט --------------------
+  # ‏Cerebras הוסר בהכרעת הבעלים (2026-09-02): צילום ה-Billing שלו הראה
+  # יתרה $0 בלי שום מענק חינמי — ‏PAYG בלבד. אין שם מה להרוויח,
+  # והקבוצה עברה ל-Groq. שם הקבוצה נשאר יציב כדי שהסוכנים לא יידעו.
+  - model_name: bulk-short
+    litellm_params:
+      model: groq/openai/gpt-oss-120b   # ‏1K בקשות/יום
+      api_key: os.environ/GROQ_API_KEY
+      rpm: 20
+  - model_name: bulk-short
+    litellm_params:
+      model: groq/groq/compound-mini    # נמדד: MINI-OK ב-0.8 שנ'
+      api_key: os.environ/GROQ_API_KEY
+      rpm: 20
+  - model_name: bulk-short
+    litellm_params:
+      model: openrouter/nvidia/nemotron-3.5-lightning:free  # נמדד OR-OK ב-3 שנ'
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  # --- קוד: CHANGELOG, סריקות דפוסים ---------------------------
+  - model_name: code
+    litellm_params:
+      model: mistral/codestral-latest   # נמדד בריא · ‏Free tier · ~1 req/sec
+      api_key: os.environ/MISTRAL_API_KEY
+  - model_name: code
+    litellm_params:
+      # גיבוי קיבולת ל-Codestral: נמדד QWEN-OK ב-0.86 שנ', ‏2.8 neurons
+      # לקריאה — ‏~3,600 ביום. הסתייגות ביומן: איכותו על קוד אמיתי
+      # טרם נמדדה (האח ה-7b המקומי נתפס לא-עקבי; זה ה-32b).
+      model: cloudflare/@cf/qwen/qwen2.5-coder-32b-instruct
+      api_key: os.environ/CLOUDFLARE_API_KEY
+
+  # --- כללי: תיעוד, Issues, milestones -------------------------
+  # שני מפתחות Gemini (הבעלים, 2026-09-02) — שתי פריסות של אותו מודל,
+  # ‏LiteLLM מאזן ביניהן: כפול RPD בפועל (‏2×500 ל-flash-lite).
+  - model_name: general
+    litellm_params:
+      model: gemini/gemini-3.1-flash-lite  # ‏15 RPM · 500 RPD · measured
+      api_key: os.environ/GEMINI1_API_KEY
+      rpm: 12                           # הספק: 15 — שוליים
+  - model_name: general
+    litellm_params:
+      model: gemini/gemini-3.1-flash-lite
+      api_key: os.environ/GEMINI2_API_KEY
+      rpm: 12
+  - model_name: general
+    litellm_params:
+      model: groq/openai/gpt-oss-120b   # ‏1K בקשות/יום
+      api_key: os.environ/GROQ_API_KEY
+  - model_name: general
+    litellm_params:
+      model: cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast  # נמדד מהקטלוג 2026-09-02 · ‏10K neurons/יום
+      api_key: os.environ/CLOUDFLARE_API_KEY
+      # בלי CLOUDFLARE_ACCOUNT_ID ב-.env הפריסה הזאת לא בריאה — הבעלים
+      # מעתיק אותו מהדשבורד (Workers & Pages ← צד ימין)
+
+  # --- Tessera: לא מחובר, בכוונה -------------------------------
+  # נבדק ברשת (‏2026-09-02): ‏Tessera אינו ספק מודלים אלא proxy
+  # אופטימיזציה בעצמו (ניתוב+cache+דחיסה) — כלומר כפילות של השכבה
+  # הזאת. שני proxies בשרשרת הם סיוט ניפוי. אם ה-cache שלו יידרש,
+  # הוא נכנס **במקום** LiteLLM, לא דרכו.
+
+router_settings:
+  # ‏429 הוא החתימה של free tier — מנסים שוב, ואז עוברים לחבר
+  # בקבוצה. ‏fallback רק בתוך הקבוצות שבקובץ הזה (hard $0).
+  num_retries: 3
+  retry_after: 20
+  cooldown_time: 75            # נמדד בג'מיני: 20 שניות לא חוצות את חלון הדקה, 75 כן
+  allowed_fails: 2
+  fallbacks:
+    # מקומי יורד החוצה רק כשהוא **אינו מסוגל** — כלומר כש-ollama
+    # אינו עונה בכלל. זה בדיוק הניסוח של הבעלים: "יורדת ברשימה רק
+    # כשהיא אינה מסוגלת, לא כשנוח יותר". אין כאן 429 ואין מכסה,
+    # ולכן הנפילה היחידה האפשרית היא ש-ollama כבוי.
+    - local: [general]
+    - local-code: [code]
+    - big-context: [general]
+    - bulk-short: [general]
+    - code: [general]
+
+litellm_settings:
+  drop_params: true            # ספקים חינמיים רגישים לפרמטרים לא מוכרים
+  request_timeout: 240
+  # מונה יומי (#286): קריאה מעבר לתקרת היום לא יוצאת. הנתיב יחסי
+  # לתיקיית העבודה — free-fleet.ps1 מריץ משורש הריפו.
+  callbacks: tools.agents.fleet_budget.handler
+
+general_settings:
+  # אין master key בקובץ — אם רוצים אחד, הוא ב-.env. ‏proxy מקומי
+  # על loopback בלבד; זה לא שירות רשת.
+  telemetry: false

@@ -1,0 +1,57 @@
+# האכיפה שאי-אפשר להשתיק של השער (gate-pr.sh).
+#
+# הצד המקומי ניתן לדילוג — סוכן פשוט לא יריץ אותו. לכן פסק-הדין
+# נבדק כאן, בצד השרת, על כל PR מענף auto/*:
+#
+#   pass                  → ירוק
+#   fail / חסר / לא מוכר  → אדום. סוכן שדילג על השער בדיוק כאן נתפס
+#   insufficient_evidence → לא ירוק ולא אדום בשקר: תווית + תגובה,
+#                           וההכרעה אצל הבעלים. הקיפול לאחד משני הצדדים
+#                           היה או מזמין עקיפה או משקר
+#
+# ‏edited בטריגרים: פסק-דין אפשר להוסיף (או למחוק) בעריכת body.
+name: pr-gate
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    # רק ענפי סוכנים. ‏PR של בני אדם אינו עובר בשער הזה.
+    if: startsWith(github.head_ref, 'auto/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read the verdict from the PR body
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -uo pipefail
+          gh pr view "$PR" --json body --jq .body > /tmp/body.txt
+          python3 tools/agents/gate_verdict.py < /tmp/body.txt
+          code=$?
+          if [ "$code" -eq 0 ]; then
+            echo "פסק-דין: pass" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$code" -eq 2 ]; then
+            # אינו pass ואינו fail — מסומן בקול, וההכרעה אצל אדם.
+            gh pr edit "$PR" --add-label "gate:insufficient-evidence" || true
+            gh pr comment "$PR" --body "‏**פסק-דין שער: insufficient_evidence.** הראיות לא רצו — זה אינו 'נבדק ותקין'. ההכרעה אם למזג בכל זאת היא של הבעלים, במפורש." 
+            echo "פסק-דין: insufficient_evidence — תווית + תגובה" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "::error::‏PR של סוכן בלי פסק-דין שער תקף — או שהשער דולג, או שהקוד נבדק ונכשל."
+          exit 1
