@@ -19,10 +19,7 @@
 
     python tools/agents/limits-watch.py
 """
-import io
-import json
 import re
-import sys
 import urllib.error
 import urllib.request
 

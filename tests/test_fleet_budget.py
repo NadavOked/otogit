@@ -98,7 +98,8 @@ def test_the_window_comes_from_the_manifest_not_the_code(tmp_path,
     fb.record("m", "k")
     import datetime as dt
     month = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m")
-    import json, io as _io
+    import json
+    import io as _io
     state = json.load(_io.open(fb.STATE, encoding="utf-8"))
     assert list(state) == ["m|k|%s" % month], state
 
