@@ -1,0 +1,154 @@
+# סקירת לוגים שבועית — הצד המבצע של הכלל ב-AGENTS.md.
+#
+# הכלל היה כתוב שם מאתמול ו**אף אחד לא קרא את היומן**. מסמך שמבטיח
+# מה שאין הוא בדיוק #198. זה מה שגורם לו לקרות.
+#
+# שבע השאלות נגזרות ממה שהבעלים ביקש: משימות חוזרות שמתאימות לאוטומציה,
+# תקלות חוזרות, פרומפטים ותהליכים שכדאי להפוך לכלי, החלטות שצריך
+# לתעד לצוות, שלבים שמבזבזים זמן, ופערים בבדיקות/אבטחה/תיעוד.
+
+name: log-review
+
+on:
+  schedule:
+    - cron: "0 5 * * 0"     # ראשון 08:00 שעון ישראל
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  discussions: write
+
+jobs:
+  # המתג של הבעלים יושב בקומיט, ולכן Actions רואה אותו. לפני התיקון
+  # הזה הוא היה רק על המכונה שלו ושלושה workflows התעלמו ממנו (#266).
+  switches:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      gemini: ${{ steps.read.outputs.gemini }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: read
+        run: |
+          set -euo pipefail
+          f=.otogit/agent-switches.json
+          [ -f "$f" ] || { echo "::error::$f חסר — לא מניחים שהסוכן מופעל."; exit 1; }
+          # פייתון ולא jq: ‏jq שבר כאן שלוש פעמים. מפתח חסר זורק
+          # KeyError, ‏set -e עוצר, והשער נכשל סגור.
+          v=$(python3 -c "import json;print(str(json.load(open('$f',encoding='utf-8'))['providers']['gemini']['enabled']).lower())")
+          echo "gemini=$v" >> "$GITHUB_OUTPUT"
+          echo "gemini enabled=$v"
+  review:
+    needs: switches
+    if: needs.switches.outputs.gemini == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Gather the last 7 days of task logs
+        run: |
+          set -euo pipefail
+          : > /tmp/logs.md
+          found=0
+          for d in $(seq 0 6); do
+            f="logs/$(date -u -d "-$d day" +%Y-%m-%d).md"
+            if [ -f "$f" ]; then
+              cat "$f" >> /tmp/logs.md
+              echo >> /tmp/logs.md
+              found=$((found + 1))
+            fi
+          done
+          entries=$(grep -c '^## ' /tmp/logs.md || true)
+          echo "ימים עם יומן: $found | רשומות: $entries"
+          # יומן ריק אינו "שבוע מושלם" — הוא סימן שאיש לא כתב.
+          if [ "$entries" -lt 3 ]; then
+            echo "SKIP=too-few" >> "$GITHUB_ENV"
+            echo "::warning::רק $entries רשומות בשבוע — מעט מדי לניתוח דפוסים. או שבוע שקט, או שסוכנים אינם כותבים יומן."
+          fi
+
+      - name: Ask for patterns
+        if: env.SKIP != 'too-few'
+        env:
+          KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "$KEY" ] || { echo "::error::GEMINI_API_KEY אינו מוגדר — הסקירה לא רצה."; exit 1; }
+          python3 - <<'PY'
+          import io, json
+          logs = io.open("/tmp/logs.md", encoding="utf-8", errors="replace").read()[:120000]
+          brief = (
+            "אלה רשומות יומן משימות של סוכני AI מהשבוע האחרון בפרויקט אחד.\n"
+            "כל רשומה כוללת: מה בוקש, מה בוצע, מה נכשל בדרך, מה נבדק, "
+            "מה לא אומת, ומועמד לאוטומציה.\n\n"
+            "נתח את המצטבר וענה בעברית, בקצרה, רק על מה שיש לו ראיה "
+            "בלוגים עצמם. מסקנה בלי ראיה בלוגים אינה מסקנה — אם קטגוריה "
+            "ריקה, כתוב 'אין' ואל תמציא.\n\n"
+            "1. משימות שחוזרות על עצמן ומתאימות לאוטומציה\n"
+            "2. תקלות ושגיאות שחוזרות אצל יותר מסוכן אחד\n"
+            "3. פרומפטים שחוזרים וכדאי להפוך לסקיל קבוע\n"
+            "4. תהליכים ידניים שכדאי להפוך לכלי\n"
+            "5. החלטות שנפלו וכדאי לתעד לצוות\n"
+            "6. שלבים שבוזבז בהם הכי הרבה זמן\n"
+            "7. פערים בבדיקות, באבטחה או בתיעוד\n"
+            "8. מה חוזר בשדה 'לא אומת' — זה מה שאף אחד לא בדק\n\n"
+            "עד 14 שורות סך הכול. בלי מחמאות ובלי סיכום כללי.\n\n"
+            "היומנים:\n")
+          json.dump({"contents": [{"parts": [{"text": brief + logs}]}],
+                     "generationConfig": {"temperature": 0.3, "maxOutputTokens": 3000,
+                                          "thinkingConfig": {"thinkingBudget": 1024}}},
+                    io.open("/tmp/req.json", "w", encoding="utf-8"), ensure_ascii=False)
+          PY
+          ok=0
+          for a in 1 2 3; do
+            curl -sS --fail --max-time 180 -H "x-goog-api-key: $KEY" \
+              -H "Content-Type: application/json" -d @/tmp/req.json \
+              "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent" \
+              > /tmp/resp.json && { ok=1; break; }
+            echo "::warning::ניסיון $a נכשל"; sleep $((a * 20))
+          done
+          [ "$ok" -eq 1 ] || { echo "::error::שלושה ניסיונות נכשלו — הסקירה לא רצה."; exit 1; }
+          python3 - <<'PY'
+          import io, json, sys
+          r = json.load(io.open("/tmp/resp.json", encoding="utf-8"))
+          c = r.get("candidates") or []
+          t = "".join(p.get("text","") for p in c[0]["content"]["parts"]).strip() if c else ""
+          if not t:
+              sys.exit("empty model response — לא מדווחים 'אין ממצאים' על תשובה ריקה")
+          io.open("/tmp/review.md", "w", encoding="utf-8").write(t)
+          u = r.get("usageMetadata") or {}
+          io.open("/tmp/usage.txt", "w", encoding="utf-8").write(
+              "total=%s thoughts=%s" % (u.get("totalTokenCount","?"), u.get("thoughtsTokenCount",0)))
+          PY
+
+      - name: Post to the agent board
+        if: env.SKIP != 'too-few'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BOARD: "212"
+        run: |
+          set -euo pipefail
+          {
+            echo "## 📊 סקירת לוגים שבועית"
+            echo
+            echo "_נתח את יומני המשימות של השבוע. ממצא בלי ראיה בלוגים אינו ממצא._"
+            echo
+            cat /tmp/review.md
+            echo
+            echo "---"
+            echo "_עלות: $(cat /tmp/usage.txt 2>/dev/null || echo 'לא נמדדה')_"
+          } > /tmp/comment.md
+          id=$(gh api graphql -F owner="${REPO%%/*}" -F name="${REPO##*/}" -F number="$BOARD" \
+            -q '.data.repository.discussion.id' -f query='
+            query($owner:String!,$name:String!,$number:Int!){
+              repository(owner:$owner,name:$name){ discussion(number:$number){ id } } }')
+          [ -n "$id" ] || { echo "::error::לוח הסוכנים #$BOARD לא נמצא"; exit 1; }
+          url=$(gh api graphql -F discussionId="$id" -F body=@/tmp/comment.md \
+            -q '.data.addDiscussionComment.comment.url' -f query='
+            mutation($discussionId:ID!,$body:String!){
+              addDiscussionComment(input:{discussionId:$discussionId,body:$body}){ comment{ url } } }')
+          [ -n "$url" ] || { echo "::error::הדוח לא פורסם"; exit 1; }
+          echo "posted: $url"

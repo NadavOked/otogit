@@ -1,0 +1,66 @@
+# בוט אישור-קבלה לתשובות הבעלים בדיוני ההכרעות (#282).
+#
+# הבעיה שנמדדה: הבעלים ענה על ארבע שאלות ב-05:27–05:32 ואף בוט לא
+# הגיב — ‏idea-refine מטפל רק ברעיונות, ותשובת הכרעה חיכתה שעות
+# למתאם שאיש לא העיר. מעכשיו: תגובה שלו מקבלת "נקלט" מיד, ונפתח
+# ‏Issue בתור שהרץ המתוזמן כבר קורא.
+#
+# למה רק תגובות של NadavOked: בוטים מגיבים בדיונים כל הזמן, ולולאת
+# בוט-עונה-לבוט היא הדרך לשרוף מכסת Actions בלילה אחד.
+name: decision-ack
+
+on:
+  discussion_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  discussions: write
+  issues: write
+
+concurrency:
+  group: decision-ack-${{ github.event.comment.node_id }}
+  cancel-in-progress: false
+
+jobs:
+  ack:
+    # רק תשובות של הבעלים, ורק בשני דיוני ההכרעות.
+    if: >
+      github.event.comment.user.login == vars.OWNER_LOGIN &&
+      (github.event.discussion.number == fromJSON(vars.BOARD_DISCUSSION) ||
+       github.event.discussion.number == fromJSON(vars.DECISIONS_DISCUSSION))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Acknowledge and enqueue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMENT_ID: ${{ github.event.comment.node_id }}
+          COMMENT_URL: ${{ github.event.comment.html_url }}
+          DISCUSSION: ${{ github.event.discussion.number }}
+          # הגוף עובר כקובץ ולא כאינטרפולציה בתוך script — תוכן של
+          # תגובה הוא נתון, לא קוד, וזה גם מה שמונע הזרקת פקודות.
+          BODY: ${{ github.event.comment.body }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$BODY" > /tmp/body.md
+          # ‏Issue לתור — התשובה נכנסת למסלול העבודה הרגיל
+          title="הכרעת הבעלים מדיון #${DISCUSSION} — $(date -u +%Y-%m-%d\ %H:%M)"
+          {
+            echo "תשובה של הבעלים בדיון #${DISCUSSION}: ${COMMENT_URL}"
+            echo
+            echo '> '"$(head -c 400 /tmp/body.md | tr '\n' ' ')"
+            echo
+            echo "המתאם: לקרוא את התגובה המלאה בדיון, לפעול, ולסגור עם ראיות."
+          } > /tmp/issue.md
+          url=$(gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "$title" --label "agent:ready" --label "task" \
+            --body-file /tmp/issue.md)
+          echo "נפתח: $url"
+          # אישור קבלה בשרשור — תגובה על התגובה שלו
+          gh api graphql -f query='mutation($d:ID!,$b:String!){addDiscussionComment(input:{discussionId:$d,replyToId:"'"$COMMENT_ID"'",body:$b}){comment{id}}}' \
+            -F d="${{ github.event.discussion.node_id }}" \
+            -F b="🤖 נקלט. נפתח ${url} בתור העבודה — המתאם יטפל ויחזור עם ראיות." \
+            || gh api graphql -f query='mutation($d:ID!,$b:String!){addDiscussionComment(input:{discussionId:$d,body:$b}){comment{id}}}' \
+            -F d="${{ github.event.discussion.node_id }}" \
+            -F b="🤖 נקלט (${COMMENT_URL}). נפתח ${url} בתור העבודה."

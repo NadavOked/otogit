@@ -1,0 +1,155 @@
+# מסנכרן כלים כלליים אל otogit — **רק קבצים חדשים**.
+#
+# הכרעת הבעלים: הכלים שאינם יודעים דבר על ImageCtl חיים בריפו נפרד כדי
+# שיוכלו לרוץ על כל פרויקט. הבוט הזה מעביר לשם קובץ שנוסף כאן, ו**אינו
+# נוגע בקובץ שכבר קיים שם** — otogit מתפתח משם, לא נדרס מכאן.
+#
+# ⚠️ הוא פותח PR ואינו ממזג. גם ריפו של תשתית מקבל שער.
+# ⚠️ קבצים שמכירים את ImageCtl (lab-work-checkout, pull-model,
+#    agentctl) **אינם ברשימה** — כלי שמנחש נתיב כותב למקום הלא נכון.
+
+name: otogit-sync
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tools/agents/**"
+      - "tools/discuss.sh"
+      - "tools/git/after-merge-check.sh"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Copy files that otogit does not have yet
+        env:
+          GH_TOKEN: ${{ secrets.OTOGIT_TOKEN }}
+          EXPECTED: ${{ vars.OTOGIT_SYNC_ENABLED }}
+          TARGET: NadavOked/otogit
+        run: |
+          set -euo pipefail
+          # ‏GitHub אינו מבחין בין סוד שלא הוגדר מעולם לסוד שנמחק, ולכן
+          # הכוונה מוצהרת בנפרד (OTOGIT_SYNC_ENABLED) — אותו דפוס כמו
+          # ‏REVIEW_ENABLED ב-otogit. בלי זה, כל מיזוג ל-main האדים על
+          # טוקן שטרם הוגדר, ואדום קבוע מפסיק להיות אות.
+          if [ -z "${GH_TOKEN:-}" ]; then
+            if [ "${EXPECTED:-}" = "true" ]; then
+              echo "::error::‏OTOGIT_SYNC_ENABLED=true אבל OTOGIT_TOKEN ריק — הובטח סנכרון ואין טוקן. תקלה, לא בחירה."
+              exit 1
+            fi
+            echo "::warning::הסנכרון לא רץ — אין OTOGIT_TOKEN וגם לא הובטח (OTOGIT_SYNC_ENABLED לא הוגדר)."
+            {
+              echo "## ⚠ הסנכרון ל-otogit לא רץ"
+              echo "אין \`OTOGIT_TOKEN\`. **זה אינו 'סונכרן'** — זה 'לא סונכרן'."
+              echo "להפעלה: \`gh secret set OTOGIT_TOKEN\` ואז \`gh variable set OTOGIT_SYNC_ENABLED --body true\` — ומאותו רגע טוקן ריק יאדים."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # מיפוי מפורש: מקור → יעד. רשימה ולא glob, כי glob היה גורר
+          # גם קבצים שמכירים את ImageCtl ברגע שמישהו יוסיף אחד.
+          MAP="
+          tools/agents/task-log.sh|tools/agents/task-log.sh
+          tools/agents/usage.sh|tools/agents/usage.sh
+          tools/agents/quota-lib.ps1|tools/agents/quota-lib.ps1
+          tools/agents/agents-ctl.ps1|tools/agents/agents-ctl.ps1
+          tools/agents/agent-health.sh|tools/agents/agent-health.sh
+          tools/discuss.sh|tools/discuss.sh
+          tools/git/after-merge-check.sh|tools/after-merge-check.sh
+          "
+
+          git clone -q "https://x-access-token:${GH_TOKEN}@github.com/${TARGET}" /tmp/otogit
+          cd /tmp/otogit && git checkout -q -B sync/from-imagectl origin/main && cd -
+
+          added=""
+          skipped=""
+          while IFS='|' read -r src dst; do
+            [ -n "$src" ] || continue
+            src=$(echo "$src" | xargs); dst=$(echo "$dst" | xargs)
+            [ -f "$src" ] || { echo "::warning::$src לא קיים כאן — מדולג"; continue; }
+            if [ -e "/tmp/otogit/$dst" ]; then
+              skipped="$skipped $dst"          # קיים שם — לא נוגעים
+              continue
+            fi
+            mkdir -p "/tmp/otogit/$(dirname "$dst")"
+            cp "$src" "/tmp/otogit/$dst"
+            added="$added $dst"
+          done <<< "$MAP"
+
+          echo "נוספו:${added:- (אין)}"
+          echo "קיימים כבר (לא נגענו):${skipped:- (אין)}"
+          if [ -z "$added" ]; then
+            echo "אין קובץ חדש להעביר — יוצא."
+            exit 0
+          fi
+
+          # עץ הפריסה — נכתב מהמיפוי עצמו, לא ביד. מסמך שמתעדכן
+          # בנפרד מהקוד מתיישן בשקט, וזה בדיוק מה שקרה כאן ב-#198.
+          {
+            echo "# מפת הפריסה — נוצר אוטומטית"
+            echo
+            echo "מתוחזק על ידי \`.github/workflows/otogit-sync.yml\` ב-ImageCtl."
+            echo "**לא לערוך ביד** — כל שינוי יידרס בסנכרון הבא."
+            echo
+            echo "עודכן: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo
+            echo "| ב-ImageCtl | ב-otogit |"
+            echo "|---|---|"
+            while IFS='|' read -r a b; do
+              [ -n "$a" ] || continue
+              echo "| \`$(echo "$a" | xargs)\` | \`$(echo "$b" | xargs)\` |"
+            done <<< "$MAP"
+            echo
+            echo "## מה שנשאר ב-ImageCtl בכוונה"
+            echo
+            echo "קבצים שמכירים שרת, כונן או נתיב ספציפי — כלי שמנחש נתיב"
+            echo "כותב למקום הלא נכון, ובשקט:"
+            echo
+            echo "- \`tools/git/lab-work-checkout.sh\` — מכיר את שרת המעבדה"
+            echo "- \`tools/agents/pull-model.ps1\` — מכיר את Ollama המקומי"
+            echo "- \`server/agentctl/\` — נועד להתחבר לשרת ImageCtl"
+          } > /tmp/otogit/DEPLOYMENT.md
+
+          cd /tmp/otogit
+          git config user.name "otogit-sync"
+          git config user.email "89553719+NadavOked@users.noreply.github.com"
+          git add -A
+          # ראיה חיובית: אם git לא רואה שינוי, משהו לא קרה כפי שחשבנו.
+          if git diff --cached --quiet; then
+            echo "::error::הועתקו קבצים אבל git לא רואה שינוי — לא ממשיכים על סמך הנחה."
+            exit 1
+          fi
+          # הודעת הקומיט נבנית לקובץ ולא כמחרוזת רב-שורתית בתוך ה-YAML:
+          # שורות חדשות בתוך `-m` בתוך `run:` שוברות את הפרסור. זו
+          # מלכודת מס' 1 ב-PITFALLS של otogit, ונפלתי בה גם כאן.
+          {
+            printf 'sync: קבצים חדשים מ-ImageCtl\n\n'
+            printf '%s\n\n' "$added"
+            printf 'הועבר אוטומטית על ידי otogit-sync. רק קבצים שלא היו כאן;\n'
+            printf 'קיימים אינם נדרסים, ו-otogit מתפתח בעצמו.\n\n'
+            printf 'Co-authored-by: Claude <claude@agents.imagectl.local>\n'
+          } > /tmp/sync-msg.txt
+          git commit -q -F /tmp/sync-msg.txt
+          git push -q -f origin sync/from-imagectl
+          # אותו טעם: גוף ה-PR לקובץ, לא כמחרוזת רב-שורתית ב-YAML.
+          {
+            printf 'נוצר אוטומטית על ידי `otogit-sync` מתוך ImageCtl.\n\n'
+            printf '**נוספו:**%s\n\n' "$added"
+            printf '**קיימים כבר, לא נגענו:**%s\n\n' "${skipped:- (אין)}"
+            printf 'הבוט מעביר **רק קבצים חדשים**. קובץ שכבר כאן אינו נדרס —\n'
+            printf 'otogit מתפתח בעצמו, ו-ImageCtl אינו מקור אמת עליו.\n\n'
+            printf 'לפני מיזוג: לוודא שהקובץ אינו מכיר נתיב או ריפו ספציפי\n'
+            printf '(משתנה סביבה, לא ערך קבוע).\n'
+          } > /tmp/sync-pr.md
+          gh pr create --repo "$TARGET" --base main --head sync/from-imagectl \
+            --title "sync: קבצים חדשים מ-ImageCtl" \
+            --body-file /tmp/sync-pr.md 2>&1 | tail -1 \
+            || echo "PR כבר קיים — הענף עודכן"
