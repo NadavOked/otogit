@@ -19,7 +19,13 @@ function Save-AgentState($s) {
     Move-Item -Force $tmp $script:StateFile
     if ($null -eq (Get-Content $script:StateFile -Raw | ConvertFrom-Json)) { throw "קובץ המצב לא נקרא בחזרה" }
 }
-function Set-AgentCooldown([string]$Agent, [datetime]$UntilUtc, [string]$Reason) {
+# ‏PSUseShouldProcessForStateChangingFunctions מושתק כאן במכוון:
+# הפונקציה כותבת קובץ מצב מקומי אחד של הכלי עצמו, לא משנה מצב מערכת.
+# ‏-WhatIf/-Confirm על קירור סוכן היה מוסיף שאלה למסלול שרץ אוטומטית.
+function Set-AgentCooldown {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+        'PSUseShouldProcessForStateChangingFunctions', '')]
+    param([string]$Agent, [datetime]$UntilUtc, [string]$Reason)
     $s = Read-AgentState
     $key = "cooldown_$Agent"
     $val = [pscustomobject]@{ until = $UntilUtc.ToString("o"); reason = $Reason }

@@ -1,0 +1,77 @@
+# ‏lint לקובצי ה-PowerShell.
+#
+# **למה זה קיים:** עד ה-workflow הזה, קובצי `.ps1` היו הקוד היחיד
+# בריפו שלא נסרק בכלל. ‏tests.yml מריץ shellcheck על `.sh` ו-pytest
+# על `.py`; ‏PowerShell פשוט לא היה על המפה. הקבצים האלה מריצים את
+# הצי — סוכן שנגמרה לו המכסה, קירור, כיבוי — וטעות בהם שקטה.
+#
+# **מה PSScriptAnalyzer תופס:** ‏cmdlet שלא קיים, פרמטר שלא קיים,
+# משתנה אוטומטי שנדרס, ‏`$null` בצד הלא נכון של השוואה (מלכודת אמיתית
+# ב-PowerShell), ופלט שנבלע.
+#
+# רץ על `ubuntu-latest` עם pwsh המותקן שם — הכלי חוצה פלטפורמות,
+# ורץ ל-runner של לינוקס הוא מהיר וזול יותר מ-windows-latest.
+
+name: powershell
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PSSA_VERSION: "1.25.0"
+
+jobs:
+  psscriptanalyzer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: PSScriptAnalyzer — אפס קבצים אינו "נקי"
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -RequiredVersion $env:PSSA_VERSION `
+            -Scope CurrentUser -Force -SkipPublisherCheck
+          Import-Module PSScriptAnalyzer
+          (Get-Module PSScriptAnalyzer).Version
+
+          # ‏Invoke-ScriptAnalyzer מחזיר $null גם כשהכל תקין וגם כשלא
+          # מצא קובץ. שני המצבים נראים זהים, ורק אחד מהם אומר משהו —
+          # ולכן סופרים את הקבצים בנפרד ונכשלים אם אין.
+          $files = Get-ChildItem -Path . -Filter '*.ps1' -Recurse -File |
+                   Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' }
+          "קובצי PowerShell בריפו: $($files.Count)"
+          if ($files.Count -eq 0) {
+            "::error::לא נמצא אף קובץ .ps1 — הבדיקה לא רצה"
+            exit 1
+          }
+          $files | ForEach-Object { "  $($_.FullName)" }
+
+          # ‏Error ו-Warning נאכפים. ‏Information הוא סגנון ואינו חוסם.
+          # מה שכן נחסם ונשאר בקוד מקבל
+          # `[Diagnostics.CodeAnalysis.SuppressMessageAttribute]` עם
+          # נימוק לידו — החלטה שנראית ב-diff, לא סף שמורידים.
+          $found = Invoke-ScriptAnalyzer -Path . -Recurse `
+                     -Severity Error, Warning
+          if ($found) {
+            foreach ($f in $found) {
+              "::error file=$($f.ScriptPath),line=$($f.Line)::$($f.RuleName) — $($f.Message)"
+            }
+            "מספר הממצאים: $($found.Count)"
+            exit 1
+          }
+          "אין ממצאים ברמת Error/Warning."

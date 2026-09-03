@@ -1,0 +1,133 @@
+# אבטחה בקוד הפייתון עצמו, בשתי שאלות נפרדות.
+#
+# **‏bandit — מה שאנחנו כתבנו.** ‏shell=True על קלט, ‏eval, ‏tempfile
+# צפוי מראש, ‏TLS מכובה. ‏ruff בודק נכונות ו-gitleaks מחפש סוד שדלף;
+# אף אחד מהם לא מסתכל על **דפוס** מסוכן בקוד שנכתב בכוונה.
+#
+# **‏pip-audit — מה שאנחנו מייבאים.** חולשה ידועה בחבילה שאנחנו
+# מתקינים. הכלי הזה נכשל כשמישהו אחר טעה, לא כשאנחנו טעינו — ולכן
+# הוא רץ גם כשאיש לא נגע בקוד.
+#
+# ‏שני ה-jobs נפרדים בכוונה: כישלון של אחד אינו מסתיר את השני.
+
+name: security-python
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # חולשה חדשה מתפרסמת בלי קשר לקומיטים. ריצה שבועית תופסת אותה.
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  BANDIT_VERSION: "1.9.4"
+  PIP_AUDIT_VERSION: "2.10.1"
+
+jobs:
+  bandit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - run: pip install "bandit==${BANDIT_VERSION}"
+
+      - name: bandit — הסף מוצהר, וספירת הקבצים נבדקת
+        run: |
+          set -euo pipefail
+          # **הסף, במפורש.** ‏severity>=medium מוציא את B101
+          # (‏assert בטסטים — שם זה הכלי, לא באג). ‏confidence=high
+          # מוציא את B613 (‏trojansource): הוא מסמן כל תו כיווניות,
+          # והריפו הזה כתוב בעברית. נמדד — הקוד מכיל **רק** ‏U+200F
+          # (‏RLM), שהוא סימן כיוון ולא override, ולכן אינו יכול
+          # לסדר אסימונים מחדש. ראו ImageCtl #199.
+          #
+          # מה שכן נחסם עובר דרך `# nosec BXXX` על השורה עצמה, עם
+          # נימוק לידה — החלטה שנראית ב-diff, לא סף שמורידים.
+          rc=0
+          bandit -r . --exclude ./.git \
+            --severity-level medium --confidence-level high \
+            -f json -o bandit.json -q || rc=$?
+          # ‏0=נקי, ‏1=נמצאו ממצאים (נדפיס אותם למטה), כל השאר=הכלי
+          # עצמו נפל. נפילה של הכלי אינה "לא נמצאו ממצאים".
+          if [ "$rc" -gt 1 ]; then
+            echo "::error::bandit נפל עם קוד $rc — הבדיקה לא הושלמה"
+            exit "$rc"
+          fi
+
+          python - <<'PY'
+          import json, sys
+          d = json.load(open("bandit.json", encoding="utf-8"))
+          scanned = [k for k in d["metrics"] if k != "_totals"]
+          print("קבצים שנסרקו: %d" % len(scanned))
+          # ‏bandit יוצא 0 גם כשלא הצליח לפרסר קובץ, וגם כשלא מצא
+          # קבצים בכלל. שני המצבים נראים כמו "נקי" ואינם.
+          if not scanned:
+              print("::error::bandit לא סרק אף קובץ — הבדיקה לא רצה")
+              sys.exit(1)
+          if d["errors"]:
+              print("::error::bandit נכשל על קבצים: %s" % d["errors"])
+              sys.exit(1)
+          for r in d["results"]:
+              print("::error file=%s,line=%s::%s %s — %s" % (
+                  r["filename"], r["line_number"], r["test_id"],
+                  r["issue_severity"], r["issue_text"]))
+          if d["results"]:
+              sys.exit(1)
+          print("אין ממצאים ברמת medium/high.")
+          PY
+
+  pip-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - run: pip install "pip-audit==${PIP_AUDIT_VERSION}"
+
+      - name: pip-audit — דילוג מוצהר ונספר, לא שקט
+        run: |
+          set -euo pipefail
+          # הריפו הזה עומד היום על ספריית התקן בלבד — אין
+          # requirements.txt ואין pyproject.toml. זה **מצב אמיתי
+          # שנמדד**, לא בדיקה שנכשלה: הכלי הוא מלכודת שנדרכת מעצמה
+          # ברגע שקובץ תלויות ראשון ייכנס.
+          mapfile -t manifests < <(find . \
+            \( -name 'requirements*.txt' -o -name 'pyproject.toml' \
+               -o -name 'poetry.lock' -o -name 'Pipfile.lock' \) \
+            -not -path './.git/*' | sort)
+
+          echo "קובצי תלויות שנמצאו: ${#manifests[@]}"
+          if [ "${#manifests[@]}" -eq 0 ]; then
+            echo "::notice::0 קובצי תלויות. אין מה לבדוק — וזה נמדד, לא הונח."
+            exit 0
+          fi
+
+          for m in "${manifests[@]}"; do
+            echo "== $m"
+            case "$m" in
+              *pyproject.toml) pip-audit --strict --progress-spinner off -P "$(dirname "$m")" ;;
+              *)               pip-audit --strict --progress-spinner off -r "$m" ;;
+            esac
+          done

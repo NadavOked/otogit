@@ -1,0 +1,59 @@
+# ‏lint לפייתון.
+#
+# **מה הוא תופס שאף בדיקה אחרת כאן לא תופסת:** שם שאינו מוגדר, ייבוא
+# מת, משתנה שנדרס לפני שנקרא, ‏`f`-string בלי שדות. ‏pytest מריץ רק
+# מסלולים שנבחרו, ולכן שורה שאין עליה טסט עוברת אותו בשלום גם כשהיא
+# שבורה; ‏bandit מחפש **אבטחה** ולא נכונות. רק pyflakes קורא כל שורה
+# בכל קובץ, בלי להריץ אותה.
+#
+# סט החוקים יושב ב-`ruff.toml` ולא כאן, כדי שהריצה המקומית והריצה
+# ב-CI יסכימו. גרסת הכלי **מוצמדת** — סט חוקים משתמע נודד עם הגרסה,
+# וריצה ירוקה שהופכת אדומה בלי שנגעו בקוד היא בדיקה שאי אפשר לסמוך
+# עליה.
+
+name: ruff
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  RUFF_VERSION: "0.16.6"
+
+jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - run: pip install "ruff==${RUFF_VERSION}"
+
+      - name: ruff — אפס קבצים אינו "נקי"
+        run: |
+          set -euo pipefail
+          # ‏ruff יוצא 0 גם כשלא מצא קובץ לבדוק. "לא היה מה לבדוק"
+          # ו"נבדק והכל תקין" הם שני מצבים שונים, ורק אחד מהם אומר
+          # משהו. סופרים לפני, ונכשלים אם אין.
+          found=$(find . -name '*.py' -not -path './.git/*' | wc -l)
+          echo "קבצי פייתון בריפו: $found"
+          if [ "$found" -eq 0 ]; then
+            echo "::error::לא נמצא אף קובץ .py — הבדיקה לא רצה"
+            exit 1
+          fi
+          ruff check --output-format=github .

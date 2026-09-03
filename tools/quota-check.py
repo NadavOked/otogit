@@ -63,7 +63,9 @@ def check_codex():
     try:
         # בווינדוס ה-CLI הוא shim מסוג .CMD, ו-Popen בלי shell נכשל
         # ב-WinError 2. הנתיב המלא מ-which פותר את זה בכל מערכת.
-        p = subprocess.Popen([exe, "app-server"],
+        # ‏bandit B602 מושתק כאן: הפקודה היא **רשימה**, לא מחרוזת, ולכן
+        # אין מעטפת שמפרשת מפריד. ‏exe מגיע מ-shutil.which בלבד.
+        p = subprocess.Popen([exe, "app-server"],  # nosec B602
                              shell=(os.name == "nt" and exe.lower().endswith(
                                  (".cmd", ".bat"))),
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -165,7 +167,9 @@ def check_grok():
     req = urllib.request.Request(url, headers={
         "Authorization": "Bearer " + tok, "Accept": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=30) as r:
+        # ‏bandit B310 מושתק כאן: ה-URL קבוע בקוד למעלה וסכימתו קבועה.
+        # אין דרך להזריק סכימה מקומית, וזה מה שהחוק מחפש.
+        with urllib.request.urlopen(req, timeout=30) as r:  # nosec B310
             body = json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):

@@ -1,0 +1,98 @@
+# בדיקת ה-workflows עצמם. עד עכשיו הם היו הקוד היחיד בריפו שאיש לא
+# בדק — ובדיוק הם מריצים את כל השאר.
+#
+# **‏actionlint — נכונות.** ‏`runs-on` שלא קיים, ביטוי `${{ }}` שבור,
+# שם אירוע שגוי, ‏`needs` על job שאינו קיים, ו-shellcheck על כל בלוק
+# ‏`run:`. ‏tests.yml מריץ shellcheck על קובצי `.sh` בלבד — הסקריפטים
+# שבתוך ה-YAML לא נבדקו על ידי איש.
+#
+# **‏zizmor — אבטחה.** ‏script injection דרך `${{ github.event.* }}`
+# בתוך `run:` (הבאג הקלאסי של workflow שמגיב לקלט משתמש — הריפו הזה
+# ציבורי, ו-idea-to-issue.yml קורא גוף Discussion), ‏permissions רחב
+# מדי, פעולה לא מוצמדת, וטוקן שנשאר ב-.git/config אחרי checkout.
+# ‏actionlint לא בודק אף אחד מאלה: הוא בודק שה-YAML **עובד**, לא
+# שהוא **בטוח**.
+#
+# המדיניות והחוב המוצהר של zizmor יושבים ב-`zizmor.yml` בשורש.
+
+name: actions-lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  ACTIONLINT_VERSION: "1.7.12"
+  ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+  ZIZMOR_VERSION: "1.30.0"
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: התקנה — מוצמד ומאומת
+        run: |
+          set -euo pipefail
+          F="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -sSL -o "$F" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${F}"
+          echo "${ACTIONLINT_SHA256}  ${F}" | sha256sum -c -
+          tar xzf "$F" actionlint
+          ./actionlint --version
+
+      - name: actionlint — אפס קבצים אינו "נקי"
+        run: |
+          set -euo pipefail
+          # הכלי סורק את .github/workflows לבד ויוצא 0 אם התיקייה
+          # ריקה. סופרים בעצמנו קודם.
+          found=$(find .github/workflows -name '*.yml' -o -name '*.yaml' | wc -l)
+          echo "‏workflows בריפו: $found"
+          if [ "$found" -eq 0 ]; then
+            echo "::error::לא נמצא אף workflow — הבדיקה לא רצה"
+            exit 1
+          fi
+          # shellcheck מותקן על ubuntu-latest, ו-actionlint משתמש בו
+          # לבדיקת בלוקי run:. אם הוא חסר, actionlint מדלג בשקט —
+          # ולכן מוודאים שהוא שם לפני, ולא מקווים.
+          shellcheck --version > /dev/null
+          ./actionlint -color
+
+  zizmor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - run: pip install "zizmor==${ZIZMOR_VERSION}"
+
+      - name: zizmor — ההשתקות נספרות ומודפסות
+        run: |
+          set -euo pipefail
+          # ‏--persona regular: הסט שיש בו ממצא אמיתי לתקן, בלי
+          # ה-pedantic. הרצה **offline** במכוון — audit שתלוי ברשת
+          # הופך כל תקלת רשת לכישלון בדיקה, ואז מפסיקים להאמין לה.
+          #
+          # ‏zizmor מדפיס בסוף "N ignored" — כמה ממצאים הושתקו על ידי
+          # zizmor.yml. זה החוב המוצהר, והוא נראה בכל ריצה.
+          zizmor --no-online-audits --persona regular \
+            --config zizmor.yml --format plain .github/workflows/

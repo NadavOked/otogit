@@ -8,3 +8,9 @@
 __pycache__/
 *.py[cod]
 .venv/
+
+# תוצרי כלי הבדיקה — נוצרים בכל ריצה מקומית, ואינם קוד.
+.coverage
+.ruff_cache/
+.pytest_cache/
+bandit.json

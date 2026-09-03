@@ -1,0 +1,92 @@
+# סריקת תלויות מול מסד ה-OSV.
+#
+# **מה שהוא תופס ו-pip-audit לא:** ‏pip-audit יודע פייתון בלבד ומדבר
+# מול PyPI. ‏OSV הוא מסד רב-אקוסיסטמי — ‏npm, ‏Go, ‏Rust, חבילות
+# מערכת — ולכן ברגע שייכנס לכאן `package-lock.json` או `go.mod`,
+# ‏OSV-Scanner כבר מכסה אותו בלי ש-workflow חדש ייכתב. ‏gitleaks
+# מחפש סוד שדלף מאיתנו; זה מחפש חולשה שהגיעה אלינו.
+#
+# הכלי מוצמד לגרסה **ומאומת ב-sha256** לפני שהוא רץ, כמו gitleaks —
+# בינארי שמורידים מהרשת ומריצים בלי לאמת הוא בדיוק שרשרת האספקה
+# שהכלי הזה אמור להגן עליה.
+
+name: deps
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # חולשה חדשה מתפרסמת בלי קשר לקומיטים.
+  schedule:
+    - cron: "23 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  OSV_VERSION: "2.5.1"
+  OSV_SHA256: "f9f25499a2c8cc367b3af45df2ea7eeca7fbccceab9c35079968f4b3652194be"
+
+jobs:
+  osv-scanner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: התקנה — מוצמד ומאומת
+        run: |
+          set -euo pipefail
+          curl -sSL -o osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/v${OSV_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SHA256}  osv-scanner" | sha256sum -c -
+          chmod +x osv-scanner
+          ./osv-scanner --version
+
+      - name: סריקה — כל קוד יציאה מטופל במפורש
+        run: |
+          set -euo pipefail
+          rc=0
+          ./osv-scanner scan source --recursive . || rc=$?
+
+          # קודי היציאה של osv-scanner, ומה כל אחד **באמת** אומר:
+          #   0   — נמצאו חבילות, אין חולשה.
+          #   1   — נמצאו חבילות, יש חולשה.
+          #   128 — לא נמצאה אף חבילה לסרוק.
+          # ‏128 הוא המצב שבו קל לטעות. הוא יכול להיות "לריפו אין
+          # תלויות" (מצב אמיתי) או "הרצנו על הנתיב הלא נכון" (בדיקה
+          # שלא רצתה). לכן הוא **לא** עובר סתם — הוא נבדק מול ספירה
+          # עצמאית של קובצי התלויות בריפו. אם יש קובץ תלויות ובכל
+          # זאת קיבלנו 128, הסורק מוגדר לא נכון, וזה כישלון.
+          case "$rc" in
+            0)
+              echo "נסרקו חבילות, לא נמצאה חולשה."
+              ;;
+            1)
+              echo "::error::נמצאו חולשות בתלויות — ראו את הפלט למעלה"
+              exit 1
+              ;;
+            128)
+              n=$(find . \( -name 'requirements*.txt' -o -name 'pyproject.toml' \
+                    -o -name 'poetry.lock' -o -name 'Pipfile.lock' \
+                    -o -name 'package-lock.json' -o -name 'go.mod' \
+                    -o -name 'Cargo.lock' -o -name 'pom.xml' \) \
+                    -not -path './.git/*' | wc -l)
+              if [ "$n" -ne 0 ]; then
+                echo "::error::הסורק לא מצא חבילות, אבל בריפו יש $n קובצי תלויות. הסורק מוגדר לא נכון."
+                exit 1
+              fi
+              echo "::notice::0 קובצי תלויות בריפו, והסורק מסכים. אין מה לסרוק — נמדד, לא הונח."
+              ;;
+            *)
+              echo "::error::osv-scanner נפל עם קוד $rc — הסריקה לא הושלמה"
+              exit "$rc"
+              ;;
+          esac
