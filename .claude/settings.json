@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "permissions": {
+    "deny": [
+      "Bash(mkfs:*)",
+      "Bash(mkfs.ext4:*)",
+      "Bash(mkfs.vfat:*)",
+      "Bash(wipefs:*)",
+      "Bash(gh repo delete:*)",
+      "Bash(gh secret:*)",
+      "Bash(gh auth token:*)",
+      "Bash(gh auth logout:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python tools/agents/guard-bash.py",
+            "timeout": 15,
+            "statusMessage": "guard-bash"
+          },
+          {
+            "type": "command",
+            "command": "python tools/agents/route-task.py --hook",
+            "timeout": 15,
+            "statusMessage": "route-task"
+          }
+        ]
+      }
+    ]
+  }
+}

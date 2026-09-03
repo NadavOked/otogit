@@ -27,7 +27,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          BOARD: "212"   # השרשור הקבוע: לוח הסוכנים
+          # מספר הדיון שונה בכל ריפו. ‏212 היה של הפרויקט שבו זה נולד,
+          # והוא אינו קיים כאן — הדוח נפל עליו פעמיים.
+          BOARD: ${{ vars.BOARD_DISCUSSION }}
         run: |
           set -euo pipefail
 
@@ -57,9 +59,16 @@ jobs:
           # ‏gh יוצא 0 גם על רשימה ריקה — "אין ריצות" חייב להיבדק בתוך
           # ה-jq, אחרת ריק מוצג כ"רץ עכשיו (null)". ממצא של הסוקר
           # האוטומטי על ה-PR הזה עצמו; אומת (jq על [] ועל רשומה) ותוקן.
-          nightly=$(gh run list --repo "$REPO" --workflow nightly --limit 1 \
-            --json conclusion,createdAt \
-            -q 'if length == 0 then "אין ריצות" else .[0] | "\(.conclusion // "רץ עכשיו") (\(.createdAt))" end')
+          # ‏gh יוצא **שונה מאפס** כשה-workflow אינו קיים כלל, ו-`set -e`
+          # מפיל את כל הדוח. ריפו בלי ריצה לילית הוא מצב חוקי — אבל הוא
+          # **אינו** "עבר": שלושת המצבים נפרדים ומדווחים בנפרד.
+          if gh workflow view nightly --repo "$REPO" >/dev/null 2>&1; then
+            nightly=$(gh run list --repo "$REPO" --workflow nightly --limit 1 \
+              --json conclusion,createdAt \
+              -q 'if length == 0 then "אין ריצות" else .[0] | "\(.conclusion // "רץ עכשיו") (\(.createdAt))" end')
+          else
+            nightly="לא מוגדר בריפו הזה"
+          fi
 
           {
             echo "## ☀️ דוח בוקר — $(date -u +%Y-%m-%d)"
@@ -76,6 +85,7 @@ jobs:
             echo "_נוצר אוטומטית. עובדות מ-API, לא ניתוח._"
           } > /tmp/report.md
 
+          [ -n "$BOARD" ] || { echo "::error::vars.BOARD_DISCUSSION אינו מוגדר"; exit 1; }
           disc_id=$(gh api graphql -F owner="${REPO%%/*}" -F name="${REPO##*/}" -F number="$BOARD" \
             -q '.data.repository.discussion.id' -f query='
             query($owner:String!,$name:String!,$number:Int!){

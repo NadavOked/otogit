@@ -1,0 +1,426 @@
+{
+  "_": [
+    "מגבלות הספקים במבנה שכלי יכול לקרוא. הנוסח לבני אדם, ההסבר",
+    "ואיך למדוד — ב-tools/agents/LIMITS.md ליד הקובץ הזה.",
+    "",
+    "כלל: כל ערך נושא 'source'. 'measured' = נמדד ומותר להחליט לפיו.",
+    "'unknown' = לא ידוע, ואסור להחליט לפיו אוטומטית. כלי שנתקל",
+    "ב-unknown חייב להצהיר על כך, לא להניח ערך.",
+    "",
+    "'billing_enabled: false' הוא מה שמונע חיוב: חריגה בספק חינמי",
+    "מחזירה 429 ואינה מחייבת. אם זה יהפוך ל-true, חריגה תעלה כסף."
+  ],
+  "updated": "2026-09-02",
+  "providers": {
+    "gemini": {
+      "paid": false,
+      "billing_enabled": false,
+      "note_he": "‏Free tier. חריגה חוסמת ואינה מחייבת. רגיש מאוד לקצב.",
+      "models": {
+        "gemini-3.1-flash-lite": {
+          "in_use_by": [
+            "agent-review",
+            "idea-refine",
+            "log-review"
+          ],
+          "rpm": 15,
+          "rpd": 500,
+          "tpm": 250000,
+          "source": "measured"
+        },
+        "gemini-3.6-flash": {
+          "in_use_by": [],
+          "rpm": 5,
+          "rpd": 20,
+          "tpm": 250000,
+          "source": "measured",
+          "note_he": "‏השיא שנרשם היה 24 מתוך 20 ליום — התקרה נפרצה."
+        },
+        "gemini-3-flash": {
+          "in_use_by": [],
+          "rpm": 5,
+          "rpd": 20,
+          "tpm": 250000,
+          "source": "measured",
+          "note_he": "‏השיא שנרשם היה 23 מתוך 20 ליום."
+        }
+      },
+      "on_429": {
+        "wait_seconds": 75,
+        "max_attempts": 4,
+        "source": "judgement"
+      },
+      "serialize": true,
+      "reports_remaining_quota": false
+    },
+    "grok": {
+      "paid": true,
+      "billing_enabled": false,
+      "note_he": "‏מנוי $30 עד 20/09/2026. סכום קבוע — חוסם ואינו מחייב מעבר לו.",
+      "models": {
+        "grok": {
+          "rpm": null,
+          "rpd": null,
+          "source": "unknown"
+        }
+      },
+      "serialize": true,
+      "reports_remaining_quota": false,
+      "observed": {
+        "weekly_percent_remaining": 34,
+        "observed_on": "2026-09-02",
+        "source": "בעל המנוי קרא מהקונסולה",
+        "note_he": "‏34% **נותר** — לפי מה שנמסר. אין דרך לאמת אוטומטית."
+      },
+      "quota_method": {
+        "how": "GET https://cli-chat-proxy.grok.com/v1/billing (ו-?format=credits לשבועי)",
+        "auth": "טוקן OAuth מ-~/.grok/auth.json",
+        "confidence": "read-third-party-source",
+        "note_he": "נקרא מקוד של kenryu42/pi-grok-cli — **לא הורץ כאן**. ההסקה הקודמת מהבינארי אמרה x.ai/billing וזה היה קרוב ולא מדויק; המארח הוא cli-chat-proxy.grok.com.",
+        "risk_he": "‏endpoint לא מתועד. עלול להישבר בעדכון, ולכן כישלון שלו חייב להיקרא 'לא ידענו' ולא 'יש מקום'.",
+        "who_may_call_he": "דורש את הטוקן של בעל המנוי. סוכן אינו נוגע בסודות — בעל המכונה מריץ, לא הסוכן."
+      }
+    },
+    "codex": {
+      "paid": true,
+      "billing_enabled": false,
+      "note_he": "‏מנוי $20. OPENAI_API_KEY ריק — אינו יכול לחייב לפי שימוש.",
+      "models": {
+        "gpt-5.6-sol": {
+          "rpm": null,
+          "rpd": null,
+          "source": "unknown"
+        }
+      },
+      "serialize": true,
+      "reports_remaining_quota": true,
+      "observed": {
+        "weekly_percent_USED": 8,
+        "five_hour_percent_USED": 19,
+        "weekly_resets_at": "2026-09-07T07:01",
+        "five_hour_resets_at": "2026-09-02T09:50",
+        "plan": "plus",
+        "observed_on": "2026-09-02",
+        "source": "codex app-server → account/rateLimits/read (הורץ)",
+        "note_he": "‏8% נוצל, לא 92%. הקונסולה מציגה **נותר**, ה-API מציג **נוצל** — 100-8=92. קריאה הפוכה עלתה בהחלטה שגויה להפסיק להשתמש בו."
+      },
+      "quota_method": {
+        "how": "codex app-server, JSON-RPC על stdio: initialize → initialized → account/rateLimits/read",
+        "cost": "אפס טוקנים — שאילתת חשבון, לא הסקה",
+        "auth": "משתמש ב-auth.json הקיים, בלי מפתח נוסף",
+        "returns": "usedPercent + resetsAt לשני חלונות, planType, credits",
+        "caveat_he": "‏app-server מסומן experimental והמתודות תחת v2/. הריצו generate-json-schema לוודא שהשדות עדיין שם, במקום להניח."
+      }
+    },
+    "ollama": {
+      "paid": false,
+      "billing_enabled": false,
+      "note_he": "‏מקומי. אין מגבלת קצב, אין תקרה יומית, ואין עלות. נמדד: ‏llama3.2:3b עונה ב-0.7 שנ' — מהיר דיו לסיווג וטריאז'. הגדולים דורשים ~30 שנ' טעינה בכל קריאה קרה.",
+      "models": {
+        "qwen2.5-coder:7b": {
+          "rpm": null,
+          "rpd": null,
+          "source": "n/a",
+          "tokens_per_second": 11.1,
+          "seconds_to_answer": 8.2,
+          "classified_correctly": true,
+          "benchmark": "measured 2026-09-02, single classification prompt",
+          "load_seconds": 6.1,
+          "measured_on": "2026-09-02",
+          "measured_gpu": null
+        },
+        "qwen2.5-coder:32b": {
+          "rpm": null,
+          "rpd": null,
+          "source": "n/a",
+          "tokens_per_second": 3.0,
+          "seconds_to_answer": 38.8,
+          "classified_correctly": true,
+          "benchmark": "measured 2026-09-02, single classification prompt"
+        },
+        "llama3.2:3b": {
+          "rpm": null,
+          "rpd": null,
+          "source": "n/a",
+          "tokens_per_second": 28.4,
+          "seconds_to_answer": 3.9,
+          "classified_correctly": true,
+          "benchmark": "measured 2026-09-02, single classification prompt",
+          "load_seconds": 3.1,
+          "measured_on": "2026-09-02",
+          "measured_gpu": null
+        },
+        "phi4:14b": {
+          "rpm": null,
+          "rpd": null,
+          "source": "n/a",
+          "tokens_per_second": 4.8,
+          "seconds_to_answer": 3.5,
+          "classified_correctly": true,
+          "benchmark": "measured 2026-09-02, single classification prompt"
+        },
+        "gemma3:27b": {
+          "rpm": null,
+          "rpd": null,
+          "source": "n/a",
+          "tokens_per_second": 2.5,
+          "seconds_to_answer": 32.4,
+          "classified_correctly": true,
+          "benchmark": "measured 2026-09-02, single classification prompt"
+        }
+      },
+      "serialize": false,
+      "reports_remaining_quota": false,
+      "recommended_for": [
+        "classification",
+        "triage",
+        "labelling"
+      ],
+      "connected": true,
+      "proxy_groups": {
+        "local": "ollama_chat/llama3.2:3b — סיווג/טריאז'/תיוג",
+        "local-code": "ollama_chat/qwen2.5-coder:7b — דפוסי קוד קצרים"
+      },
+      "api_base": "http://127.0.0.1:11434",
+      "_connected_note_he": "‏עד 02/09 היה מותקן ולא מחובר: ‏10 מודלים על הדיסק, אפס כלים שמנתבים אליהם, והשכבה הראשונה ב-routing.order הייתה מסמך בלבד. מחובר דרך LiteLLM על 127.0.0.1:4000 בקבוצות local/local-code.",
+      "machine_profile": {
+        "os": "Windows",
+        "release": "11",
+        "machine": "AMD64",
+        "processor": "Intel64 Family 6 Model 165 Stepping 5, GenuineIntel",
+        "gpu": null
+      },
+      "benchmark_tool": "tools/agents/bench-local.py",
+      "_measurement_warning_he": "‏המספרים כאן נמדדו על המכונה שב-machine_profile ובתאריך שברשומה. הם אינם תכונה של המודל אלא של הצירוף מודל+מכונה — הבעלים החליף חומרה והמספרים הישנים המשיכו להיראות כמו עובדה. הריצו את bench-local.py --write, אל תערכו ידנית.",
+      "_sample_size_warning_he": "‏classified_correctly הוא **דגימה אחת**. באותו יום, qwen2.5-coder:7b טעה בריצה אחת וצדק בשנייה — אותו מודל, אותו פרומפט. אין להסיק ממנו על איכות; הוא רק סימן שהמודל בכלל עונה בפורמט הנכון."
+    },
+    "claude": {
+      "paid": true,
+      "billing_enabled": false,
+      "reports_remaining_quota": false,
+      "note_he": "‏מנוי. אין תת-פקודה למכסה — נמדד ב-claude --help, אפס התאמות.",
+      "quota_method": {
+        "how": null,
+        "note_he": "‏/cost קיים בתוך סשן אינטראקטיבי בלבד. בצי שבו קלוד אינו הראשי, הוא היחיד שאי אפשר למדוד מבחוץ."
+      },
+      "models": {
+        "claude": {
+          "rpm": null,
+          "rpd": null,
+          "source": "unknown"
+        }
+      },
+      "serialize": false
+    },
+    "groq_api": {
+      "paid": false,
+      "billing_enabled": false,
+      "note_he": "‏ZDR דלוק (הבעלים). אינו מאמן על קלט/פלט — נבדק ברשת. אין כרטיס = hard-$0.",
+      "models": {
+        "compound": {
+          "in_use_by": [],
+          "rpd": 250,
+          "tpm": 70000,
+          "source": "owner-reported (הבעלים, 2026-09-02)"
+        },
+        "openai/gpt-oss-120b": {
+          "in_use_by": [],
+          "rpd": 1000,
+          "source": "owner-reported (הבעלים, 2026-09-02)"
+        },
+        "groq/compound-mini": {
+          "in_use_by": [],
+          "source": "unknown",
+          "note_he": "‏בשימוש ב-litellm.yaml (קבוצת bulk-short) ולא היה מוצהר כאן כלל — ולכן המונה לא ספר אותו ולא דיווח שאינו סופר. נמדד 02/09 שהוא עונה ב-0.8 שנ'; ה**תקרה** שלו אינה ידועה, ולכן אין כאן מספר."
+        }
+      },
+      "trains_on_data": {
+        "value": false,
+        "source": "read-third-party-source (web, 2026-09-02)"
+      },
+      "reports_remaining_quota": false
+    },
+    "cerebras": {
+      "paid": false,
+      "billing_enabled": false,
+      "connected": false,
+      "note_he": "הוסר בהכרעת הבעלים 2026-09-02: צילום מסך ה-Billing שלו — יתרה $0, ‏Auto-recharge כבוי, אפס מענקי קרדיט. ‏PAYG בלבד לחשבונות חדשים (המסלול החינמי בלי כרטיס נסגר באוגוסט 2026). ‏source: owner-verified screenshot + web."
+    },
+    "nvidia_nim": {
+      "paid": false,
+      "billing_enabled": false,
+      "note_he": "‏1000 קרדיטים בהרשמה ואחריהם המשך חינמי מוגבל-קצב (~40 RPM, תלוי-עומס). אינו מאמן. אין כרטיס.",
+      "models": {
+        "deepseek-ai/deepseek-v4-pro-0813": {
+          "in_use_by": [],
+          "rpm": 40,
+          "context": 1000000,
+          "source": "owner-reported (הבעלים, 2026-09-02)",
+          "note_he": "‏השם היה 'deepseek-v4-pro' בעוד litellm.yaml פורס 'deepseek-ai/deepseek-v4-pro-0813' — ההצהרה והפריסה לא נפגשו, ולכן המודל נראה למונה כלא-מוצהר. שונה לשם המדויק שנפרס."
+        },
+        "kimi-k3": {
+          "in_use_by": [],
+          "rpm": 40,
+          "context": 1000000,
+          "source": "owner-reported (הבעלים, 2026-09-02)"
+        }
+      },
+      "trains_on_data": {
+        "value": false,
+        "source": "read-third-party-source (web, 2026-09-02)"
+      },
+      "reports_remaining_quota": false
+    },
+    "mistral": {
+      "paid": false,
+      "billing_enabled": false,
+      "note_he": "‏Experiment חינמי מאמן על קלט/פלט כברירת מחדל. הכרעת הבעלים 2026-09-02: לא מפריע — 'אנחנו משתמשים בו לפרויקט, דיל לגיטימי' (הריפו ציבורי). בלי opt-out. הגבול היחיד שנשאר: סודות לא עוברים בפרומפטים, לאף ספק. ~1 req/sec.",
+      "models": {
+        "codestral-latest": {
+          "in_use_by": [],
+          "source": "owner-reported (הבעלים, 2026-09-02)"
+        }
+      },
+      "trains_on_data": {
+        "value": true,
+        "default": true,
+        "opt_out": "Admin Console → Privacy",
+        "source": "read-third-party-source (web, 2026-09-02)",
+        "accepted_by_owner": "2026-09-02"
+      },
+      "reports_remaining_quota": false
+    },
+    "cloudflare": {
+      "paid": false,
+      "billing_enabled": false,
+      "note_he": "‏10K neurons/יום, איפוס 00:00 UTC. פרטי כברירת מחדל, אינו מאמן.",
+      "models": {
+        "default": {
+          "in_use_by": [],
+          "neurons_per_day": 10000,
+          "source": "owner-reported (הבעלים, 2026-09-02)"
+        }
+      },
+      "trains_on_data": {
+        "value": false,
+        "source": "read-third-party-source (web, 2026-09-02)"
+      },
+      "reports_remaining_quota": false
+    },
+    "tessera": {
+      "paid": false,
+      "billing_enabled": false,
+      "connected": false,
+      "note_he": "לא מחובר בכוונה: ‏Tessera הוא proxy אופטימיזציה (ניתוב+cache), לא ספק מודלים — כפילות של LiteLLM. נבדק ברשת 2026-09-02."
+    },
+    "openrouter": {
+      "paid": false,
+      "billing_enabled": false,
+      "note_he": "מתווך עם מודלים חינמיים ובתשלום — בקונפיג רק :free, נאכף בטסט. נמדד 2026-09-02: ‏18 מודלים חינמיים; הקרדיט ההיסטורי ($10) מוצה ולא מוסיפים — מודל בתשלום פשוט ייכשל, וזה בדיוק hard-$0. רכישת העבר מקנה את שכבת ה-1000 בקשות/יום לחינמיים (‏read-third-party-source).",
+      "models": {
+        "nvidia/nemotron-3-ultra-550b-a55b:free": {
+          "in_use_by": [],
+          "context": 1000000,
+          "source": "measured"
+        },
+        "nvidia/nemotron-3.5-lightning:free": {
+          "in_use_by": [],
+          "context": 1000000,
+          "source": "measured"
+        }
+      },
+      "trains_on_data": {
+        "value": "per-upstream-provider",
+        "source": "read-third-party-source (2026-09-02)"
+      },
+      "reports_remaining_quota": true,
+      "quota_endpoint": "GET /api/v1/credits"
+    }
+  },
+  "routing": {
+    "_": [
+      "סדר העדפה שהכריע הבעלים ב-2026-09-02. משימה הולכת לשכבה",
+      "הראשונה שמסוגלת לה, ויורדת ברשימה רק כשהיא אינה מסוגלת —",
+      "לא כשנוח יותר. הנימוק: מקומי אינו עולה ואינו נחסם; Gemini",
+      "חינמי אך תקוע ב-20 בקשות ליום; המנויים עולים כסף קבוע;",
+      "והמתאם הוא המשאב היקר ביותר."
+    ],
+    "order": [
+      "ollama",
+      "gemini",
+      "codex_or_grok",
+      "claude"
+    ],
+    "decided_by": "nadav",
+    "decided_on": "2026-09-02",
+    "_mechanism_he": [
+      "עד 02/09 הסדר הזה היה מסמך בלבד, והופר בפועל: ~65K טוקנים של",
+      "‏Codex וקריאת Grok נשרפו על טריאז' וסיווג — משימות שמוצהרות",
+      "ב-ollama.recommended_for. ‏tools/agents/route-task.py הופך אותו",
+      "למנגנון, וה-hook ב-.claude/settings.json מריץ אותו לפני כל",
+      "קריאת CLI לשכבה גבוהה. השדות שלמטה הם הקלט שלו — הם נתונים,",
+      "לא קוד, כדי שהכרעה של הבעלים תשתנה בקובץ ולא ב-if."
+    ],
+    "task_kinds": {
+      "_he": "מילות ראיה לזיהוי אופי המשימה. סירוב דורש ראיה חיובית — טקסט שלא התאים לאף סוג אינו נחסם.",
+      "classification": {
+        "en": ["classify", "classification", "categorize", "categorise", "sort into", "bucket"],
+        "he": ["סווג", "סיווג", "לסווג", "מיין", "למיין"]
+      },
+      "triage": {
+        "en": ["triage", "first pass over", "skim the backlog"],
+        "he": ["טריאז", "טריאף", "מיון ראשוני"]
+      },
+      "labelling": {
+        "en": ["label", "labels", "labelling", "labeling", "relabel"],
+        "he": ["תיוג", "לתייג", "תייג", "תווית", "תוויות"]
+      }
+    },
+    "never_delegate_down": {
+      "_he": "מה שנשאר על המנוי לפי AGENTS.md, גם כשמילת סיווג מופיעה בטקסט. הרשימה הזאת מבטלת סירוב — היא מונעת מהמנגנון להזיק.",
+      "_why_not_bug_he": "‏'bug' ו-'לתקן' היו כאן בטיוטה הראשונה ונמחקו אחרי מדידה: המשימה 'תייג issues כ-bug או enhancement' הופעלה עליהן והמנגנון **התיר** את Codex — כלומר שם של תווית ביטל את הסירוב. מילת וטו חייבת להעיד על **אופי** העבודה (ניפוי, מיזוג, חוזה), לא להופיע כמחרוזת בתוכן שלה.",
+      "en": ["merge", "main branch", "debug", "debugging", "root cause", "interfaces.md", "contract", "secret", "credential", "deploy", "production"],
+      "he": ["מיזוג", "למזג", "ניפוי", "שורש הבעיה", "חוזה", "סוד", "פריסה", "ייצור"]
+    },
+    "tier_commands": {
+      "_he": "איך מזוהה קריאה לשכבה בשורת פקודה. הבסיס לאכיפה ב-hook.",
+      "_argv_vs_anywhere_he": "‏argv נבדק כ**מילת הפקודה** של קטע (אחרי ; | && וכו'), ולא כמחרוזת חופשית. הריפו הזה **כותב** על codex ועל grok — הודעת קומיט או grep שמזכירים אותם היו נחסמים, והשומר היה הופך למטרד שמכבים. ‏anywhere שמור לסימנים שאינם מופיעים אלא בקריאה אמיתית, כמו נתיב ה-API של ג'מיני.",
+      "gemini": {"argv": ["gemini-cli"], "anywhere": [":generateContent"]},
+      "codex_or_grok": {"argv": ["codex", "grok"], "anywhere": []},
+      "claude": {"argv": ["claude"], "anywhere": []}
+    },
+    "tier_endpoints": {
+      "_he": "לאן מפנים כשמסרבים — כדי שהסירוב יהיה שימושי ולא רק 'לא'.",
+      "ollama": "http://127.0.0.1:4000/v1 (model: local) או ollama run llama3.2:3b"
+    }
+  },
+  "_quota_note_he": "‏weekly_percent_used מגיע מדיווח אנושי מהקונסולה, לא מה-API — לא Codex ולא Grok חושפים יתרה. לכן הוא **מתיישן**, ותאריך observed_on הוא חלק מהנתון ולא קישוט.",
+  "_confidence_levels_he": {
+    "measured": "הורץ כאן וראינו את התשובה",
+    "read-third-party-source": "נקרא בקוד של מישהו אחר, לא הורץ",
+    "unknown": "לא נמצא. אין זו הוכחה שאינו קיים."
+  },
+  "free_fleet": {
+    "proxy": "LiteLLM על 127.0.0.1:4000 — tools/agents/free-fleet.ps1",
+    "config": "tools/agents/litellm.yaml",
+    "litellm_prefix_to_provider": {
+      "_he": "קידומת הספק במחרוזת המודל של LiteLLM ← המפתח כאן בקובץ. בלי המיפוי הזה `caps()` היה רשימה ידנית, וספק שנוסף ל-litellm.yaml פשוט לא נספר — בלי שאיש יידע. ספק שאינו כאן מדווח כ-uncounted, לא כ'ללא תקרה'.",
+      "groq": "groq_api",
+      "nvidia_nim": "nvidia_nim",
+      "mistral": "mistral",
+      "gemini": "gemini",
+      "cloudflare": "cloudflare",
+      "openrouter": "openrouter",
+      "ollama_chat": "ollama"
+    },
+    "hard_zero_rule_he": "אין ספק בתשלום בקונפיג, אין fallback החוצה, ואין חשבון עם אמצעי תשלום מחובר. ספק שדורש כרטיס אינו חינמי.",
+    "routing_he": {
+      "big-context": "סריקות וקריאת קבצים",
+      "bulk-short": "תיוג/סיווג/קומיטים",
+      "code": "CHANGELOG וסריקות דפוסים",
+      "general": "תיעוד/Issues/milestones"
+    },
+    "stays_on_subscription_he": "הכרעות main, ניפוי, שרשרת/חוזים — והכלל: תוצר חינמי לא נכנס ל-main בלי בדיקת המתאם מול החוזים",
+    "report_due": "2026-09-04"
+  }
+}
