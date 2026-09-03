@@ -26,6 +26,7 @@ import os
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -33,6 +34,41 @@ ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
 YAML = os.path.join(HERE, "litellm.yaml")
 
 OK, GONE, NOCHK = "ok", "gone", "could-not-check"
+
+# ‏urlopen פותח דרך הפותחן הגלובלי של urllib, שכולל גם FileHandler
+# ו-FTPHandler — ולכן כתובת קטלוג שגויה היא `file:///etc/shadow`
+# **שנקרא בהצלחה**, ומפתח ה-API נשלח אליה בכותרת. הפותחן להלן נבנה
+# עם מטפלי HTTP בלבד, ולכן סכימה אחרת נכשלת מחוסר מטפל ולא מחוסר
+# בדיקה. ‏UnknownHandler חובה: בלעדיו פותחן בלי מטפל מתאים מחזיר
+# None **בשקט** (נמדד), וזה כשל פתוח.
+_OPENER = urllib.request.OpenerDirector()
+for _h in (urllib.request.ProxyHandler, urllib.request.UnknownHandler,
+           urllib.request.HTTPHandler, urllib.request.HTTPSHandler,
+           urllib.request.HTTPDefaultErrorHandler,
+           urllib.request.HTTPRedirectHandler,
+           urllib.request.HTTPErrorProcessor):
+    _OPENER.add_handler(_h())
+
+
+class UnsafeScheme(Exception):
+    """כתובת שאינה http/https — הגדרה שגויה, לא תקלת רשת.
+
+    מובחן מ-URLError בכוונה: תקלת רשת היא `could-not-check` לפי
+    הלקסיקון, וזו טעות שחייבת להישמע ולא להיבלע לתוכו.
+    """
+
+
+def http_open(req, timeout):
+    """‏http/https בלבד — בדיקה מפורשת, ומאחוריה פותחן שאוכף אותה.
+
+    הבדיקה נותנת הודעה ברורה על הכתובת; הפותחן אוכף גם את מה שהבדיקה
+    אינה רואה — הפניה אל סכימה אחרת באמצע הדרך, שאליה היו נשלחות
+    הכותרות ובהן המפתח.
+    """
+    url = getattr(req, "full_url", req)
+    if urllib.parse.urlsplit(url).scheme not in ("http", "https"):
+        raise UnsafeScheme("כתובת שאינה http/https: %r" % url)
+    return _OPENER.open(req, timeout=timeout)
 
 
 def load_env():
@@ -60,7 +96,7 @@ def _get(url, headers):
     # נחסם עם אותו מפתח בדיוק). ‏UA מפורש פותר.
     headers = dict(headers, **{"User-Agent": "imagectl-model-watch/1.0"})
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with http_open(req, timeout=60) as r:
         return json.loads(r.read().decode("utf-8"))
 
 

@@ -38,6 +38,10 @@ jobs:
           COMMENT_ID: ${{ github.event.comment.node_id }}
           COMMENT_URL: ${{ github.event.comment.html_url }}
           DISCUSSION: ${{ github.event.discussion.number }}
+          # אותו נימוק כמו ל-BODY: כל `${{ }}` מורחב לתוך ה-script
+          # **לפני** שהמעטפת רואה אותו, ולכן הוא קוד ולא נתון. דרך
+          # ‏env הערך מגיע כמחרוזת ואינו יכול להיות מורץ.
+          DISCUSSION_ID: ${{ github.event.discussion.node_id }}
           # הגוף עובר כקובץ ולא כאינטרפולציה בתוך script — תוכן של
           # תגובה הוא נתון, לא קוד, וזה גם מה שמונע הזרקת פקודות.
           BODY: ${{ github.event.comment.body }}
@@ -59,8 +63,8 @@ jobs:
           echo "נפתח: $url"
           # אישור קבלה בשרשור — תגובה על התגובה שלו
           gh api graphql -f query='mutation($d:ID!,$b:String!){addDiscussionComment(input:{discussionId:$d,replyToId:"'"$COMMENT_ID"'",body:$b}){comment{id}}}' \
-            -F d="${{ github.event.discussion.node_id }}" \
+            -F d="$DISCUSSION_ID" \
             -F b="🤖 נקלט. נפתח ${url} בתור העבודה — המתאם יטפל ויחזור עם ראיות." \
             || gh api graphql -f query='mutation($d:ID!,$b:String!){addDiscussionComment(input:{discussionId:$d,body:$b}){comment{id}}}' \
-            -F d="${{ github.event.discussion.node_id }}" \
+            -F d="$DISCUSSION_ID" \
             -F b="🤖 נקלט (${COMMENT_URL}). נפתח ${url} בתור העבודה."

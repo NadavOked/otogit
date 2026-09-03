@@ -178,7 +178,7 @@ def test_the_report_prints_both_halves():
 def test_the_uncounted_flag_lists_deployments_with_reasons():
     p = run_cli("--uncounted")
     assert p.returncode == 0, p.stderr
-    lines = [l for l in p.stdout.splitlines() if l.strip()]
+    lines = [ln for ln in p.stdout.splitlines() if ln.strip()]
     assert lines, "אין פלט"
     for line in lines:
         assert "\t" in line, "שורה בלי סיבה: %r" % line

@@ -97,7 +97,9 @@ def probe_reach():
 def probe_local_models():
     try:
         import urllib.request
-        with urllib.request.urlopen("http://127.0.0.1:11434/api/tags",
+        # ‏bandit B310 מושתק כאן: כתובת קבועה ל-loopback (‏Ollama
+        # המקומי). הבקשה לא יוצאת מהמכונה, ואין בה סוד.
+        with urllib.request.urlopen("http://127.0.0.1:11434/api/tags",  # nosec B310
                                     timeout=6) as r:
             names = [m["name"] for m in json.loads(r.read())["models"]]
         return {"running": True, "models": sorted(names)}

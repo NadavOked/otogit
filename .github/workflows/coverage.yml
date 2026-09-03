@@ -1,0 +1,87 @@
+# מפת כיסוי — **מדידה, לא שער.**
+#
+# **אין כאן `--fail-under` במכוון.** סף כיסוי מודד את הקל למדידה
+# (כמה שורות נגעו) ולא את מה שחשוב (האם הבדיקה תופסת את הכשל), והוא
+# נסגר בקלות בטסטים שמריצים קוד בלי לטעון עליו דבר. מה שהוא כן עושה
+# הוא לתת מספר ירוק לטעות בו. ‏tests.yml הוא השער; זה המפה.
+#
+# **מה שהוא מראה ואף בדיקה אחרת כאן לא:** איזה קובץ אין עליו בדיקה
+# בכלל. זה סימן, לא ציון — כמה מהכלים כאן נבדקים כתהליך-בן
+# (‏subprocess), והקוד שהם מריצים אינו נמדד ולכן קורא 0% גם כשיש לו
+# טסט עובד. מספר נמוך כאן הוא שאלה, לא ממצא.
+#
+# מה שכן נכשל בקול: ריצה שלא מדדה כלום, וטסט שדולג בלי הצהרה.
+
+name: coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  COVERAGE_VERSION: "7.16.0"
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - run: pip install pytest "coverage==${COVERAGE_VERSION}"
+
+      - name: מדידה — דילוג מוצהר ונספר
+        run: |
+          set -euo pipefail
+          coverage run --source=tools -m pytest tests -q -p no:randomly \
+            --strict-markers | tee run.txt
+
+          # אותו כלל כמו ב-tests.yml: טסט שדולג אינו טסט שעבר. אם
+          # מישהו יסמן טסט כ-skip, המספר כאן יראה ירוק והכיסוי יירד
+          # בלי הסבר — ולכן הדילוג נספר ונאמר בשמו.
+          if grep -qE '[0-9]+ skipped' run.txt; then
+            echo "::error::טסטים דולגו. דילוג אינו הצלחה."
+            exit 1
+          fi
+
+      - name: דוח — ריצה שלא מדדה כלום היא כישלון
+        run: |
+          set -euo pipefail
+          coverage report --show-missing | tee report.txt
+
+          # ‏coverage report יוצא 0 גם על מדידה של אפס שורות. זה
+          # המצב שבו הכלי "רץ" ולא בדק דבר, והוא נראה בדיוק כמו
+          # הצלחה. נקרא את המספר בחזרה ונדרוש ראיה חיובית.
+          stmts=$(coverage json -o - --pretty-print 2>/dev/null \
+            | python -c 'import json,sys; print(json.load(sys.stdin)["totals"]["num_statements"])')
+          echo "שורות שנמדדו: $stmts"
+          if [ "$stmts" -eq 0 ]; then
+            echo "::error::הכיסוי מדד 0 שורות — הריצה לא מדדה כלום"
+            exit 1
+          fi
+
+          {
+            echo '## כיסוי — מפה, לא שער'
+            echo
+            echo 'אין `--fail-under`. ‏0% על קובץ שנבדק כתהליך-בן הוא'
+            echo 'מגבלת מדידה, לא היעדר טסט.'
+            echo
+            echo '```'
+            cat report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

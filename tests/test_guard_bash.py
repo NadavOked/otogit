@@ -129,7 +129,8 @@ SITE_DENY = "site_key|מפתח האתר — גישה שמורה למתאם"
 
 def _run_env(stdin_text, env_extra):
     import os
-    env = dict(os.environ); env.update(env_extra)
+    env = dict(os.environ)
+    env.update(env_extra)
     proc = subprocess.run(
         [sys.executable, str(GUARD)], input=stdin_text,
         capture_output=True, text=True, encoding="utf-8", timeout=30, env=env)

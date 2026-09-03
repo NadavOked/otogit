@@ -96,7 +96,8 @@ def resolve(project, root=ROOT):
         raise SystemExit(
             "אין תיקייה לפרויקט %r תחת projects/. זו שגיאה ולא 'אין לו "
             "כלום' — פרויקט בלי תיקייה ופרויקט עם תיקייה ריקה הם שני "
-            "מצבים שונים. קיימים: %s" % (project, ", ".join(projects(root)) or "אף אחד"))
+            "מצבים שונים. קיימים: %s"
+            % (project, ", ".join(projects(root)) or "אף אחד"))
     out = {"project": project, "kinds": {}, "overrides": [], "missing": []}
     for kind in KINDS:
         gen_dir, spec_dir = os.path.join(root, kind), os.path.join(pdir, kind)

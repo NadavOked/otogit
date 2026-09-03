@@ -92,10 +92,12 @@ def test_validate_fails_closed_when_a_check_raises():
 
 
 def test_validate_passes_only_when_every_check_passes():
-    passing = validate(_task(), {"a": lambda _t: (True, ""), "b": lambda _t: (True, "")})
+    passing = validate(_task(), {"a": lambda _t: (True, ""),
+                                 "b": lambda _t: (True, "")})
     assert passing.passed is True
 
-    failing = validate(_task(), {"a": lambda _t: (True, ""), "b": lambda _t: (False, "לא")})
+    failing = validate(_task(), {"a": lambda _t: (True, ""),
+                                 "b": lambda _t: (False, "לא")})
     assert failing.passed is False
     assert failing.checks == {"a": True, "b": False}
 

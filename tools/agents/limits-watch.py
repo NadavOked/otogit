@@ -19,11 +19,9 @@
 
     python tools/agents/limits-watch.py
 """
-import io
-import json
 import re
-import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 # העוגנים: מה בדיוק אנחנו מצפים למצוא בדף של כל ספק, נכון ל-2026-09-02.
@@ -43,11 +41,44 @@ ANCHORS = [
 
 SAME, CHANGED, NOCHK = "same", "changed", "could-not-check"
 
+# ‏urlopen פותח דרך הפותחן הגלובלי של urllib, שכולל גם FileHandler
+# ו-FTPHandler — ולכן עוגן שכתובתו שגויה הוא `file:///etc/shadow`
+# **שנקרא בהצלחה**. הפותחן להלן נבנה עם מטפלי HTTP בלבד, ולכן סכימה
+# אחרת נכשלת מחוסר מטפל ולא מחוסר בדיקה. ‏UnknownHandler חובה:
+# בלעדיו פותחן בלי מטפל מתאים מחזיר None **בשקט** (נמדד) — כשל פתוח.
+_OPENER = urllib.request.OpenerDirector()
+for _h in (urllib.request.ProxyHandler, urllib.request.UnknownHandler,
+           urllib.request.HTTPHandler, urllib.request.HTTPSHandler,
+           urllib.request.HTTPDefaultErrorHandler,
+           urllib.request.HTTPRedirectHandler,
+           urllib.request.HTTPErrorProcessor):
+    _OPENER.add_handler(_h())
+
+
+class UnsafeScheme(Exception):
+    """כתובת שאינה http/https — עוגן שגוי, לא תקלת רשת.
+
+    מובחן מ-URLError בכוונה: תקלת רשת היא `could-not-check` לפי
+    הלקסיקון, וזו טעות בעוגן שחייבת להישמע ולא להיבלע לתוכו.
+    """
+
+
+def http_open(req, timeout):
+    """‏http/https בלבד — בדיקה מפורשת, ומאחוריה פותחן שאוכף אותה.
+
+    הבדיקה נותנת הודעה ברורה על הכתובת; הפותחן אוכף גם את מה שהבדיקה
+    אינה רואה — הפניה אל סכימה אחרת באמצע הדרך.
+    """
+    url = getattr(req, "full_url", req)
+    if urllib.parse.urlsplit(url).scheme not in ("http", "https"):
+        raise UnsafeScheme("כתובת שאינה http/https: %r" % url)
+    return _OPENER.open(req, timeout=timeout)
+
 
 def fetch(url):
     req = urllib.request.Request(url, headers={
         "User-Agent": "imagectl-limits-watch/1.0"})
-    with urllib.request.urlopen(req, timeout=45) as r:
+    with http_open(req, timeout=45) as r:
         return r.read().decode("utf-8", "replace")
 
 
