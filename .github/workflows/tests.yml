@@ -51,7 +51,7 @@ jobs:
           found=0
           while IFS= read -r f; do
             found=$((found+1))
-            if head -1 "$f" | grep -q bash; then sh=bash; else sh=sh; fi
+            if head -1 "$f" | grep -q bash; then sh='bash'; else sh='sh'; fi
             echo "== $f ($sh)"
             shellcheck -s "$sh" --severity=warning "$f"
           done < <(find . -name '*.sh' -not -path './.git/*')

@@ -55,6 +55,17 @@ jobs:
           ./actionlint --version
 
       - name: actionlint — אפס קבצים אינו "נקי"
+        env:
+          # ‏actionlint מריץ shellcheck על כל בלוק `run:`, ובברירת המחדל
+          # גם ברמת `info`. ‏`tests.yml` בריפו הזה כבר בחר סף אחר —
+          # ‏`shellcheck --severity=warning` — ולכן זו יישור לסטנדרט
+          # שכבר נבחר כאן, לא הרפיה שלו.
+          #
+          # מה שזה מוציא בפועל: ‏SC2016 ("expressions don't expand in
+          # single quotes") על מחרוזות `jq` ו-`gh` — שם `$` **אמור** לא
+          # להתרחב, וההערה היא היפוך של הכוונה. ‏SC2209 ושאר האזהרות
+          # ממשיכות להפיל את הריצה.
+          SHELLCHECK_OPTS: --severity=warning
         run: |
           set -euo pipefail
           # הכלי סורק את .github/workflows לבד ויוצא 0 אם התיקייה
