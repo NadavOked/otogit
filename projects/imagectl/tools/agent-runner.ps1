@@ -18,7 +18,6 @@ if ($Repo -notmatch '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$') {
     throw "שם ריפו לא תקין: '$Repo'. הפורמט הוא owner/name."
 }
 $Slug = $Repo -replace '[^A-Za-z0-9]', '-'
-$StateFile = Join-Path $env:USERPROFILE ".imagectl-agents.json"
 $LogDir = Join-Path $env:USERPROFILE "agent-runner-logs\$Slug"
 New-Item -ItemType Directory -Force $LogDir | Out-Null
 $Log = Join-Path $LogDir ("run-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".log")

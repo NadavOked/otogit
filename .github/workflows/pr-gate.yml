@@ -31,7 +31,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # ‏persist-credentials: false — הטוקן אינו נשאר ב-.git/config
+      # אחרי ה-checkout. הצעד הבא עובד עם `gh` ו-GH_TOKEN מפורש.
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Read the verdict from the PR body
         env:

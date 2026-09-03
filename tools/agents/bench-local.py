@@ -22,6 +22,7 @@ import platform
 import subprocess
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -36,6 +37,39 @@ PROMPT = (
     "Issue title: docs/grub-generator.md contradicts itself - the table "
     "still lists a boot timeout that was removed from the code.\n\nAnswer:")
 EXPECTED = "docs"
+
+# ‏urlopen פותח דרך הפותחן הגלובלי של urllib, שכולל גם FileHandler
+# ו-FTPHandler — ולכן `HOST` שגוי הוא `file:///etc/shadow` **שנקרא
+# בהצלחה**. הפותחן להלן נבנה עם מטפלי HTTP בלבד, ולכן סכימה אחרת
+# נכשלת מחוסר מטפל ולא מחוסר בדיקה. ‏UnknownHandler חובה: בלעדיו
+# פותחן בלי מטפל מתאים מחזיר None **בשקט** (נמדד), וזה כשל פתוח.
+_OPENER = urllib.request.OpenerDirector()
+for _h in (urllib.request.ProxyHandler, urllib.request.UnknownHandler,
+           urllib.request.HTTPHandler, urllib.request.HTTPSHandler,
+           urllib.request.HTTPDefaultErrorHandler,
+           urllib.request.HTTPRedirectHandler,
+           urllib.request.HTTPErrorProcessor):
+    _OPENER.add_handler(_h())
+
+
+class UnsafeScheme(Exception):
+    """כתובת שאינה http/https — הגדרה שגויה, לא תקלת רשת.
+
+    מובחן מ-URLError בכוונה: תקלת רשת נבלעת אל "לא הצלחנו למדוד",
+    וזו טעות שחייבת להישמע.
+    """
+
+
+def http_open(req, timeout):
+    """‏http/https בלבד — בדיקה מפורשת, ומאחוריה פותחן שאוכף אותה.
+
+    הבדיקה נותנת הודעה ברורה על הכתובת; הפותחן אוכף גם את מה שהבדיקה
+    אינה רואה — הפניה אל סכימה אחרת באמצע הדרך.
+    """
+    url = getattr(req, "full_url", req)
+    if urllib.parse.urlsplit(url).scheme not in ("http", "https"):
+        raise UnsafeScheme("כתובת שאינה http/https: %r" % url)
+    return _OPENER.open(req, timeout=timeout)
 
 
 def machine_profile():
@@ -58,7 +92,7 @@ def machine_profile():
 
 def installed():
     try:
-        with urllib.request.urlopen(HOST + "/api/tags", timeout=15) as r:
+        with http_open(HOST + "/api/tags", timeout=15) as r:
             return [m["name"] for m in json.loads(r.read())["models"]]
     except (urllib.error.URLError, OSError, ValueError, KeyError) as exc:
         raise SystemExit("‏ollama אינו עונה על %s (%s). לא ממשיכים — "
@@ -73,7 +107,7 @@ def bench(model):
     req = urllib.request.Request(HOST + "/api/generate", data=body,
                                  headers={"Content-Type": "application/json"})
     t0 = time.time()
-    with urllib.request.urlopen(req, timeout=900) as r:
+    with http_open(req, timeout=900) as r:
         d = json.loads(r.read().decode("utf-8"))
     wall = round(time.time() - t0, 1)
     ev, ed = d.get("eval_count") or 0, (d.get("eval_duration") or 0) / 1e9

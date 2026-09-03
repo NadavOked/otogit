@@ -28,9 +28,10 @@ on:
   discussion_comment:
     types: [created]
 
+# ברירת המחדל של ה-workflow היא קריאה בלבד. ‏issues/discussions
+# ניתנים ל-job שכותב בפועל, ולא לכל job שרץ כאן — ‏switches רק קורא
+# קובץ מהקומיט, ואין סיבה שהטוקן שלו יוכל לכתוב Issues.
 permissions:
-  issues: write
-  discussions: write
   contents: read
 
 concurrency:
@@ -46,7 +47,12 @@ jobs:
     outputs:
       gemini: ${{ steps.read.outputs.gemini }}
     steps:
+      # ‏persist-credentials: false — הטוקן אינו נשאר ב-.git/config
+      # אחרי ה-checkout. אין כאן `git` שנשען עליו: ה-job רק קורא
+      # קובץ מהקומיט, וכל הכתיבה בריפו עוברת דרך `gh` עם GH_TOKEN.
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - id: read
         run: |
           set -euo pipefail
@@ -70,8 +76,15 @@ jobs:
         github.event.comment.user.type != 'Bot'))
     runs-on: ubuntu-latest
     timeout-minutes: 8
+    # ה-job היחיד שכותב: פותח Issue ומגיב בדיון.
+    permissions:
+      contents: read
+      issues: write
+      discussions: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Collect the whole thread
         env:

@@ -76,9 +76,13 @@ jobs:
             echo "::error::לא נמצא אף workflow — הבדיקה לא רצה"
             exit 1
           fi
-          # shellcheck מותקן על ubuntu-latest, ו-actionlint משתמש בו
-          # לבדיקת בלוקי run:. אם הוא חסר, actionlint מדלג בשקט —
+          # הכלי shellcheck מותקן על ubuntu-latest, ו-actionlint משתמש
+          # בו לבדיקת בלוקי run:. אם הוא חסר, actionlint מדלג בשקט —
           # ולכן מוודאים שהוא שם לפני, ולא מקווים.
+          #
+          # השורה הזו **חייבת** לא להתחיל ב-`# shellcheck`: כל הערה
+          # בפתיח כזה נקראת על ידי shellcheck כהנחיה (directive), והוא
+          # נפל עליה ב-SC1072/SC1073 — הערה בעברית אינה `key=value`.
           shellcheck --version > /dev/null
           ./actionlint -color
 
