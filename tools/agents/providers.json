@@ -8,14 +8,35 @@
     "ב-unknown חייב להצהיר על כך, לא להניח ערך.",
     "",
     "'billing_enabled: false' הוא מה שמונע חיוב: חריגה בספק חינמי",
-    "מחזירה 429 ואינה מחייבת. אם זה יהפוך ל-true, חריגה תעלה כסף."
+    "מחזירה 429 ואינה מחייבת. אם זה יהפוך ל-true, חריגה תעלה כסף.",
+    "",
+    "'quota_scope' הוא **חובה** בכל ספק שהצי סופר (כלומר כל ספק",
+    "שמופיע ב-free_fleet.litellm_prefix_to_provider). הוא קובע את",
+    "**מפתח הספירה**: 'account' = כל מודלי הספק שואבים ממאגר אחד",
+    "ונספרים יחד; 'model' = לכל מודל מונה משלו; 'unknown' = ההיקף",
+    "לא נמדד, ולכן התקרות אינן נאכפות עד שיימדד.",
+    "",
+    "‏'budget': 'none' בא **במקום** 'scope', ורק כשנמדד שלספק אין",
+    "תקציב כלל אלא מגבלת קצב בלבד. אין מפתח ספירה למה שאין לו",
+    "תקציב. הצהרה זו שונה מ-'unknown' — היא היעדר **ידוע**.",
+    "",
+    "ערך תקציב 'no-limit' = הספק מצהיר במפורש שאין תקרה בשדה הזה.",
+    "שדה חסר או null = לא הוצהר. שני מצבים שונים, ולא ייקפלו לאחד."
   ],
-  "updated": "2026-09-02",
+  "updated": "2026-09-04",
   "providers": {
     "gemini": {
       "paid": false,
       "billing_enabled": false,
       "note_he": "‏Free tier. חריגה חוסמת ואינה מחייבת. רגיש מאוד לקצב.",
+      "quota_scope": {
+        "scope": "model",
+        "window": "daily",
+        "source": "measured",
+        "measured_at": "2026-09-04",
+        "reset_he": "חצות בשעון האוקיינוס השקט — **לא** UTC. ההיסט מיושם ב-window_id.",
+        "note_he": "לכל מודל תקרה יומית משלו (‏500 ל-flash-lite מול 20 ל-flash) — מאגר לכל מודל, לא לחשבון."
+      },
       "models": {
         "gemini-3.1-flash-lite": {
           "in_use_by": [
@@ -116,6 +137,11 @@
       "paid": false,
       "billing_enabled": false,
       "note_he": "‏מקומי. אין מגבלת קצב, אין תקרה יומית, ואין עלות. נמדד: ‏llama3.2:3b עונה ב-0.7 שנ' — מהיר דיו לסיווג וטריאז'. הגדולים דורשים ~30 שנ' טעינה בכל קריאה קרה.",
+      "quota_scope": {
+        "budget": "none",
+        "source": "n/a",
+        "note_he": "רץ על המכונה עצמה: אין מכסה, אין 429, ואין מה לספור. אין כאן 'scope' כי אין תקציב שיש לו מפתח ספירה — וזה מוצהר, לא חסר."
+      },
       "models": {
         "qwen2.5-coder:7b": {
           "rpm": null,
@@ -216,22 +242,102 @@
       "paid": false,
       "billing_enabled": false,
       "note_he": "‏ZDR דלוק (הבעלים). אינו מאמן על קלט/פלט — נבדק ברשת. אין כרטיס = hard-$0.",
+      "quota_scope": {
+        "scope": "model",
+        "window": "daily",
+        "source": "measured",
+        "measured_at": "2026-09-04",
+        "note_he": "דף ה-Limits של הארגון מראה תקרה **נפרדת לכל מודל** — ‏250/יום ל-compound מול 1K/יום ל-gpt-oss-120b. אין מאגר משותף לחשבון. המדידה המלאה ב-otogit-lab#9."
+      },
       "models": {
         "compound": {
           "in_use_by": [],
           "rpd": 250,
+          "tokens_per_day": "no-limit",
           "tpm": 70000,
-          "source": "owner-reported (הבעלים, 2026-09-02)"
+          "rpm": 30,
+          "source": "measured",
+          "measured_at": "2026-09-04",
+          "note_he": "‏tokens/day מוצג בדף כ-'No limit' — היעדר **מוצהר**, לא שדה שלא מילאנו."
         },
         "openai/gpt-oss-120b": {
           "in_use_by": [],
           "rpd": 1000,
-          "source": "owner-reported (הבעלים, 2026-09-02)"
+          "tokens_per_day": 200000,
+          "tpm": 8000,
+          "rpm": 30,
+          "source": "measured",
+          "measured_at": "2026-09-04"
+        },
+        "openai/gpt-oss-20b": {
+          "in_use_by": [],
+          "rpd": 1000,
+          "tokens_per_day": 200000,
+          "tpm": 8000,
+          "rpm": 30,
+          "source": "measured",
+          "measured_at": "2026-09-04"
+        },
+        "openai/gpt-oss-safeguard-20b": {
+          "in_use_by": [],
+          "rpd": 1000,
+          "tokens_per_day": 200000,
+          "tpm": 8000,
+          "rpm": 30,
+          "source": "measured",
+          "measured_at": "2026-09-04"
+        },
+        "qwen/qwen3.6-27b": {
+          "in_use_by": [],
+          "rpd": 1000,
+          "tokens_per_day": 200000,
+          "tpm": 8000,
+          "rpm": 30,
+          "source": "measured",
+          "measured_at": "2026-09-04"
+        },
+        "qwen/qwen3.8-27b": {
+          "in_use_by": [],
+          "rpd": 1000,
+          "tokens_per_day": 200000,
+          "tpm": 8000,
+          "rpm": 30,
+          "source": "measured",
+          "measured_at": "2026-09-04"
+        },
+        "meta-llama/llama-prompt-guard-2-22m": {
+          "in_use_by": [],
+          "rpd": 14400,
+          "tokens_per_day": 500000,
+          "tpm": 15000,
+          "source": "measured",
+          "measured_at": "2026-09-04"
+        },
+        "meta-llama/llama-prompt-guard-2-86m": {
+          "in_use_by": [],
+          "rpd": 14400,
+          "tokens_per_day": 500000,
+          "tpm": 15000,
+          "source": "measured",
+          "measured_at": "2026-09-04"
+        },
+        "allam-2-7b": {
+          "in_use_by": [],
+          "rpd": 7000,
+          "tokens_per_day": 500000,
+          "tpm": 6000,
+          "source": "measured",
+          "measured_at": "2026-09-04"
         },
         "groq/compound-mini": {
           "in_use_by": [],
-          "source": "unknown",
-          "note_he": "‏בשימוש ב-litellm.yaml (קבוצת bulk-short) ולא היה מוצהר כאן כלל — ולכן המונה לא ספר אותו ולא דיווח שאינו סופר. נמדד 02/09 שהוא עונה ב-0.8 שנ'; ה**תקרה** שלו אינה ידועה, ולכן אין כאן מספר."
+          "rpd": 250,
+          "tokens_per_day": "no-limit",
+          "tpm": 70000,
+          "rpm": 30,
+          "source": "measured",
+          "measured_at": "2026-09-04",
+          "note_he": "‏בשימוש ב-litellm.yaml (קבוצת bulk-short) ולא היה מוצהר כאן כלל — ולכן המונה לא ספר אותו ולא דיווח שאינו סופר. התקרה נמדדה 04/09 בדף ה-Limits: זהה ל-compound."
         }
       },
       "trains_on_data": {
@@ -250,6 +356,11 @@
       "paid": false,
       "billing_enabled": false,
       "note_he": "‏1000 קרדיטים בהרשמה ואחריהם המשך חינמי מוגבל-קצב (~40 RPM, תלוי-עומס). אינו מאמן. אין כרטיס.",
+      "quota_scope": {
+        "scope": "unknown",
+        "source": "unknown",
+        "note_he": "לא נמדד ב-04/09. כל עוד ההיקף אינו ידוע, תקרות הספק **אינן נאכפות** — ספירה לפי מודל על מאגר שהוא בעצם לחשבון מתירה פי מספר המודלים, וזה בדיוק הבאג של otogit-lab#6."
+      },
       "models": {
         "deepseek-ai/deepseek-v4-pro-0813": {
           "in_use_by": [],
@@ -275,6 +386,12 @@
       "paid": false,
       "billing_enabled": false,
       "note_he": "‏Experiment חינמי מאמן על קלט/פלט כברירת מחדל. הכרעת הבעלים 2026-09-02: לא מפריע — 'אנחנו משתמשים בו לפרויקט, דיל לגיטימי' (הריפו ציבורי). בלי opt-out. הגבול היחיד שנשאר: סודות לא עוברים בפרומפטים, לאף ספק. ~1 req/sec.",
+      "quota_scope": {
+        "budget": "none",
+        "source": "measured",
+        "measured_at": "2026-09-04",
+        "note_he": "נמדד: ל-Mistral **אין תקציב כלל** — אין per-day ואין per-month. מה שיש הוא קצב בלבד (‏TPM ובקשות/שנייה), ואותו LiteLLM אוכף. אין מפתח ספירה למה שאין לו תקציב, ולכן אין כאן 'scope'. זה היעדר **ידוע** ולא 'לא נמדד'."
+      },
       "models": {
         "codestral-latest": {
           "in_use_by": [],
@@ -294,11 +411,27 @@
       "paid": false,
       "billing_enabled": false,
       "note_he": "‏10K neurons/יום, איפוס 00:00 UTC. פרטי כברירת מחדל, אינו מאמן.",
+      "quota_scope": {
+        "scope": "account",
+        "window": "daily",
+        "account_limits": {
+          "neurons_per_day": 10000
+        },
+        "source": "measured",
+        "measured_at": "2026-09-04",
+        "reset_he": "‏00:00 UTC — כתוב במפורש בדף Workers AI, בלי ניחוש. שונה מ-Gemini, שהחלון שלו בשעון האוקיינוס השקט.",
+        "note_he": "נמדד מדשבורד Workers AI: ‏'Neurons used today: 6.03/10k', ומתחתיו llama-3.3-70b עם 2.99 ו-qwen2.5-coder-32b עם 3.04 — סכום 6.03 מול תקרה **אחת**. שני מודלים, מאגר אחד. עד 04/09 התקרה הוצהרה תחת מודל פסאודו 'default', ו-_spec_for נפל אליה עבור **כל** מודל CF — כלומר 20,000 מול 10,000 שהספק מרשה."
+      },
       "models": {
-        "default": {
+        "@cf/meta/llama-3.3-70b-instruct-fp8-fast": {
           "in_use_by": [],
-          "neurons_per_day": 10000,
-          "source": "owner-reported (הבעלים, 2026-09-02)"
+          "source": "n/a",
+          "note_he": "אין כאן מספר בכוונה — ‏n/a: תקרה למודל אינה קיימת אצל הספק הזה, היא של החשבון (‏quota_scope.account_limits). ‏2.99 נוירונים נמדדו עליו ב-04/09 מתוך אותם 10K משותפים."
+        },
+        "@cf/qwen/qwen2.5-coder-32b-instruct": {
+          "in_use_by": [],
+          "source": "n/a",
+          "note_he": "אין כאן מספר בכוונה — ‏n/a: התקרה שייכת לחשבון. ‏3.04 נוירונים נמדדו עליו ב-04/09 מתוך אותם 10K משותפים."
         }
       },
       "trains_on_data": {
@@ -317,6 +450,16 @@
       "paid": false,
       "billing_enabled": false,
       "note_he": "מתווך עם מודלים חינמיים ובתשלום — בקונפיג רק :free, נאכף בטסט. נמדד 2026-09-02: ‏18 מודלים חינמיים; הקרדיט ההיסטורי ($10) מוצה ולא מוסיפים — מודל בתשלום פשוט ייכשל, וזה בדיוק hard-$0. רכישת העבר מקנה את שכבת ה-1000 בקשות/יום לחינמיים (‏read-third-party-source).",
+      "quota_scope": {
+        "scope": "account",
+        "window": "daily",
+        "account_limits": {
+          "rpd": null
+        },
+        "source": "estimated",
+        "measured_at": null,
+        "note_he": "‏scope: account **מוצהר** — כל המודלים החינמיים שואבים מאותה מכסה — אך התקרה עצמה נשארת estimated. מה שכן נמדד ב-04/09: ‏GET /api/v1/auth/key מחזיר is_free_tier: false, כלומר התנאי המקדים לשכבת ה-1000/יום אושר. מה שלא: המספר אינו ב-API כלל (‏limit/limit_remaining הם אשראי בדולרים), והשדה היחיד שנראה כמו מכסה — rate_limit — מסומן על ידי הספק עצמו כ-deprecated. לא נורו בקשות עד 429 כדי לגלות אותו: ירי לתוך קיר כדי למדוד את מיקומו הוא בדיוק הבזבוז שהמונה קיים כדי למנוע."
+      },
       "models": {
         "nvidia/nemotron-3-ultra-550b-a55b:free": {
           "in_use_by": [],

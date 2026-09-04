@@ -9,10 +9,22 @@
 את היום, הקריאה נחסמת לפני שיצאה. פריסה בודדת שמיצתה מטופלת ממילא
 על ידי ה-429 של הספק וה-cooldown של הראוטר.
 
+**מפתח הספירה נגזר מ-`quota_scope` שבמניפסט, לא ממחרוזת המודל**
+(‏otogit-lab#6). שני ספקים מגבילים **לפי חשבון**, וכל מודליהם
+שואבים ממאגר אחד: ‏Cloudflare נמדד ב-04/09 עם 2.99 + 3.04 = 6.03
+נוירונים מול תקרה **אחת** של 10K. עד אז התקרה הוצהרה תחת מודל
+פסאודו `default`, ‏`_spec_for()` נפל אליה עבור **כל** מודל CF,
+והמונה התיר 20,000 מול 10,000. ‏`scope: account` ⇒ מפתח אחד לספק.
+
+**‏scope חסר הוא כישלון רועש.** ברירת מחדל שקטה כאן היא הבאג עצמו,
+ולכן ספק שהצי סופר ואינו מצהיר `scope` (או `budget: none`) זורק
+‏`ScopeUndeclared`.
+
 **כשל ספירה אינו מפיל את הצי.** קובץ מצב פגום → אזהרה קולנית
 והקריאה עוברת: ‏hard-$0 הוא מבני (אין למי לשלם) ולא תלוי במונה,
 וספירה שנשברת עדיפה כרעש מאשר כהשבתה. זו החרגה מודעת מ"נכשל סגור",
-והיא מתועדת כאן בכוונה.
+והיא מתועדת כאן בכוונה — ומניפסט שבור אינו יוצא ממנה: הוא מרעיש
+דרך ה-`except Exception` של ה-hook, ואינו חוסם.
 
 התקרות נקראות מ-providers.json — לא מקודדות. חלון ג'מיני בשעון
 האוקיינוס השקט (שם האיפוס), השאר UTC.
@@ -29,6 +41,28 @@ PROVIDERS = os.path.join(HERE, "providers.json")
 YAML = os.path.join(HERE, "litellm.yaml")
 STATE = os.path.join(os.path.expanduser("~"), ".imagectl-fleet-usage.json")
 WARN_AT = 0.8
+
+# ערך תקציב שהספק מצהיר עליו כ"אין תקרה" — להבדיל משדה שלא הוצהר.
+NO_LIMIT = "no-limit"
+# קידומת מפתח הספירה כשההיקף הוא חשבון. אינה יכולה להתנגש במחרוזת
+# מודל של LiteLLM, שתמיד מתחילה בקידומת ספק.
+ACCOUNT_KEY = "@account:"
+# (שדה, יחידה, מחלק) — לפי סדר עדיפות. ‏neurons אינם בקשות: ‏2.8
+# לקריאה שנמדדה, ולכן חלוקה ב-3 היא תקרה שמרנית.
+BUDGET_FIELDS = (("rpd", "requests", 1),
+                 ("tokens_per_day", "tokens", 1),
+                 ("neurons_per_day", "requests", 3))
+
+
+class ScopeUndeclared(Exception):
+    """ספק שהצי סופר בלי הצהרת `quota_scope` תקינה.
+
+    זהו **קלט שגוי, לא כשל ריצה** — ולכן הוא נזרק ואינו נבלע. הוא
+    אינו יורש מ-`ValueError` בכוונה: ‏`async_pre_call_hook` מרים
+    ‏`ValueError` הלאה (וחוסם את הקריאה), ואילו כאן ההתנהגות הנכונה
+    היא הרעש הרגיל של המונה — מניפסט שבור אינו סיבה לכבות את הצי.
+    """
+
 
 def _manifest():
     try:
@@ -53,15 +87,28 @@ def deployed_models():
     return sorted(set(re.findall(r"^\s+model:\s*(\S+)", body, re.M)))
 
 
-def _spec_for(model, man):
-    """מוצא את הצהרת המודל במניפסט לפי מחרוזת LiteLLM."""
-    prefix = model.split("/", 1)[0]
+def _provider_of(model, man):
+    """(שם הספק, ההצהרה שלו) לפי קידומת LiteLLM. אינו זורק."""
     pmap = ((man.get("free_fleet") or {})
             .get("litellm_prefix_to_provider") or {})
-    pname = pmap.get(prefix)
+    pname = pmap.get(model.split("/", 1)[0])
     if not pname:
         return None, None
-    prov = (man.get("providers") or {}).get(pname) or {}
+    return pname, ((man.get("providers") or {}).get(pname) or {})
+
+
+def _spec_for(model, man):
+    """מוצא את הצהרת המודל במניפסט לפי מחרוזת LiteLLM.
+
+    **אין כאן יותר נפילה למודל פסאודו `default`.** היא הייתה
+    המנגנון של otogit-lab#6: תקרת ה-10K של cloudflare הוצהרה תחתיה,
+    וכל אחד משני מודלי ה-CF קיבל אותה **במלואה**. תקרה שהיא של
+    החשבון יושבת מהיום ב-`quota_scope.account_limits`, ומגיעה דרך
+    מפתח ספירה אחד — לא דרך התאמה שנכשלה.
+    """
+    pname, prov = _provider_of(model, man)
+    if prov is None:
+        return None, None
     models = prov.get("models") or {}
     # התאמה לפי סיומת: "groq/groq/compound" ← "compound".
     best = None
@@ -69,9 +116,71 @@ def _spec_for(model, man):
         if model == name or model.endswith("/" + name):
             if best is None or len(name) > len(best):
                 best = name
-    if best is None and "default" in models:
-        best = "default"        # ‏cloudflare מצהיר תקרה לחשבון, לא למודל
     return (models.get(best) if best else None), prov
+
+
+def _budget_field(spec, field):
+    """(ערך, מצב) לשדה תקציב — **שלושה** מצבים ולא שניים:
+
+    ‏`"number"` — הוצהר מספר · `"declared-none"` — הספק מצהיר
+    במפורש `no-limit` · `"undeclared"` — לא הוצהר דבר. שני האחרונים
+    נראים זהים ל-`spec.get()`, וזו בדיוק הקיפול שעיקרון 5 אוסר:
+    ‏"אין תקרה" ו"לא יודעים מה התקרה" אינם אותו מצב.
+    """
+    value = spec.get(field) if isinstance(spec, dict) else None
+    if value == NO_LIMIT:
+        return None, "declared-none"
+    if value is None:
+        return None, "undeclared"
+    return int(value), "number"
+
+
+def _scope_of(pname, prov):
+    """היקף הספירה המוצהר: ‏account / model / unknown / none.
+
+    **אין ברירת מחדל.** ספק שהצי סופר ואינו מצהיר — זורק. ברירת
+    מחדל שקטה כאן היא הבאג עצמו.
+    """
+    block = prov.get("quota_scope")
+    if not isinstance(block, dict):
+        raise ScopeUndeclared(
+            "‏%s: אין quota_scope ב-providers.json. ספק שנספר חייב "
+            "להצהיר scope (account/model/unknown) או budget: none."
+            % pname)
+    if block.get("budget") == "none":
+        if "scope" in block:
+            raise ScopeUndeclared(
+                "‏%s: quota_scope מצהיר גם budget: none וגם scope — אין "
+                "מפתח ספירה למה שאין לו תקציב." % pname)
+        for name, spec in (prov.get("models") or {}).items():
+            for field, _unit, _div in BUDGET_FIELDS:
+                if _budget_field(spec, field)[1] == "number":
+                    raise ScopeUndeclared(
+                        "‏%s: quota_scope מצהיר budget: none, אך המודל %s "
+                        "מצהיר %s. שתי ההצהרות אינן יכולות להיות נכונות."
+                        % (pname, name, field))
+        return "none"
+    scope = block.get("scope")
+    if scope not in ("account", "model", "unknown"):
+        raise ScopeUndeclared(
+            "‏%s: quota_scope.scope הוא %r — חייב להיות account, model "
+            "או unknown, או במקומו budget: none." % (pname, scope))
+    return scope
+
+
+def counting_subject(model, man=None):
+    """**מפתח הספירה** של הפריסה — נגזר מ-`scope`, לא ממחרוזת המודל.
+
+    ‏`account` ⇒ כל מודלי הספק נספרים תחת מפתח אחד, כי הם שואבים
+    ממאגר אחד. זו כל התיקון של otogit-lab#6.
+    """
+    man = _manifest() if man is None else man
+    pname, prov = _provider_of(model, man)
+    if prov is None:
+        return model
+    if _scope_of(pname, prov) == "account":
+        return ACCOUNT_KEY + pname
+    return model
 
 
 # תקרות לפי מחרוזת המודל המלאה של LiteLLM, כולל **חלון** — יומי,
@@ -81,24 +190,53 @@ def _spec_for(model, man):
 # נגזר עכשיו מהמניפסט + הקונפיג ולא מרשימה בקוד: ‏`rpd` שהבעלים יוסיף
 # ל-mistral יתחיל להיאכף **בלי שינוי קוד**. עד אז המודל מדווח
 # ב-`uncounted()` — לא נעלם.
+def _cap_from(spec, window):
+    """התקרה הראשונה שהוצהרה כ**מספר**, או None.
+
+    ‏`no-limit` אינו תקרה ואינו אפס — מדלגים עליו לשדה הבא. ‏Groq
+    מצהיר `tokens_per_day: no-limit` לצד `rpd: 250`, ובלי ההבחנה
+    הזאת "אין תקרת טוקנים" היה נקרא כ"לא ידוע".
+    """
+    for field, unit, divisor in BUDGET_FIELDS:
+        value, state = _budget_field(spec, field)
+        if state == "number":
+            return {"limit": int(value / divisor), "window": window,
+                    "unit": unit}
+    return None
+
+
 def caps():
     man = _manifest()
     out = {}
     for model in deployed_models():
-        spec, prov = _spec_for(model, man)
-        if not spec:
+        pname, prov = _provider_of(model, man)
+        if prov is None:
             continue
-        window = spec.get("window", "daily")
-        if spec.get("rpd"):
-            out[model] = {"limit": int(spec["rpd"]), "window": window,
-                          "unit": "requests"}
-        elif spec.get("tokens_per_day"):
-            out[model] = {"limit": int(spec["tokens_per_day"]),
-                          "window": window, "unit": "tokens"}
-        elif spec.get("neurons_per_day"):
-            # ‏neurons אינם בקשות; ‏2.8 לקריאה שנמדדה → תקרה שמרנית.
-            out[model] = {"limit": int(spec["neurons_per_day"] / 3),
-                          "window": window, "unit": "requests"}
+        scope = _scope_of(pname, prov)
+        block = prov.get("quota_scope") or {}
+        if scope in ("none", "unknown"):
+            # אין תקציב · ההיקף לא נמדד. שניהם מדווחים ב-uncounted()
+            # עם הסיבה שלהם, ואינם נאכפים על סמך ניחוש. אכיפה לפי
+            # מודל על מאגר שהוא בעצם של החשבון מתירה פי מספר המודלים.
+            continue
+        if scope == "account":
+            subject = ACCOUNT_KEY + pname
+            spec = block.get("account_limits") or {}
+            window = block.get("window") or "daily"
+        else:
+            subject = model
+            spec = _spec_for(model, man)[0] or {}
+            window = spec.get("window") or block.get("window") or "daily"
+        cap = _cap_from(spec, window)
+        if cap is None:
+            continue
+        cap["key"] = subject
+        out[model] = cap
+        # גם תחת מפתח הספירה עצמו: הדוח קורא את קובץ המצב, ושם
+        # רשומה של ספק account ממופתחת בחשבון ולא במודל. בלעדי זה
+        # היא הייתה מוצגת "ללא תקרה ידועה" דווקא במקום שבו התקרה
+        # המשותפת היא כל הנקודה.
+        out[subject] = dict(cap)
     return out
 
 
@@ -112,16 +250,32 @@ def uncounted():
     for model in deployed_models():
         if model in known:
             continue
-        spec, prov = _spec_for(model, man)
-        if spec is None and prov is None:
-            why = "אין מיפוי קידומת ב-free_fleet.litellm_prefix_to_provider"
+        pname, prov = _provider_of(model, man)
+        if prov is None:
+            out.append((model, "אין מיפוי קידומת ב-free_fleet."
+                               "litellm_prefix_to_provider"))
+            continue
+        scope = _scope_of(pname, prov)
+        spec = _spec_for(model, man)[0]
+        if scope == "none":
+            why = ("‏%s מצהיר budget: none — נמדד שאין לו תקציב כלל. "
+                   "אין מה לספור, וזו היעדרות **ידועה** ולא חוסר"
+                   % pname)
+        elif scope == "unknown":
+            why = ("היקף הספירה (scope) של %s לא נמדד — התקרות שלו "
+                   "אינן נאכפות עד שיימדד" % pname)
         elif spec is None:
             why = "הספק מוצהר אך המודל אינו מוצהר תחתיו"
-        elif (prov or {}).get("paid") is False and not (prov or {}).get(
-                "billing_enabled"):
-            why = "מוצהר בלי rpd/tokens_per_day — התקרה אינה ידועה"
+        elif scope == "account":
+            why = ("‏scope: account מוצהר, אך תקרת החשבון של %s אינה "
+                   "מספר (‏source=%s)"
+                   % (pname, (prov.get("quota_scope") or {}).get("source")))
+        elif any(_budget_field(spec, f)[1] == "declared-none"
+                 for f, _u, _d in BUDGET_FIELDS):
+            why = ("כל שדות התקציב מוצהרים no-limit — אין תקרה, וזו "
+                   "הצהרה ולא חוסר")
         else:
-            why = "אין ערך תקרה מוצהר"
+            why = "מוצהר בלי rpd/tokens_per_day — התקרה אינה ידועה"
         out.append((model, why))
     return out
 
@@ -171,6 +325,25 @@ def _cell(v):
         return 0, 0
 
 
+def _cap_of(model):
+    """התקרה של הפריסה **כולל מפתח הספירה שלה**. ‏`caps()` ממופתח גם
+    במודל וגם במפתח הספירה, ולכן שניהם מגיעים לאותה רשומה."""
+    return caps().get(model) or {
+        "limit": None, "window": "daily", "unit": "requests",
+        "key": counting_subject(model)}
+
+
+def _state_key(model, key_alias, cap):
+    """הרשומה בקובץ המצב: מפתח ספירה | כינוי מפתח API | חלון.
+
+    ‏`key` נסבל כחסר בכוונה: טסטים מזריקים `caps()` מצומצם, ואז
+    המודל הוא מפתח הספירה של עצמו.
+    """
+    subject = cap.get("key") or model
+    return "%s|%s|%s" % (subject, key_alias,
+                         window_id(subject, cap.get("window", "daily")))
+
+
 def record(model, key_alias="", tokens=0):
     """נקרא אחרי הצלחה. הפריסה מזוהה במודל+כינוי-מפתח.
 
@@ -179,10 +352,9 @@ def record(model, key_alias="", tokens=0):
     חוצות תקרה שמונה-בקשות אינו רואה כלל. מונה שסופר את היחידה
     הלא-נכונה מדווח "רחוק מהקיר" עד הרגע שבו הוא נחסם.
     """
-    c = caps().get(model) or {"limit": None, "window": "daily",
-                              "unit": "requests"}
+    c = _cap_of(model)
     d = _load()
-    k = "%s|%s|%s" % (model, key_alias, window_id(model, c["window"]))
+    k = _state_key(model, key_alias, c)
     n, tok = _cell(d.get(k, 0))
     n, tok = n + 1, tok + max(0, int(tokens or 0))
     d[k] = {"n": n, "tokens": tok}
@@ -195,10 +367,8 @@ def record(model, key_alias="", tokens=0):
 
 
 def _spent(model, key_alias, idx):
-    c = caps().get(model) or {"window": "daily"}
-    d = _load()
-    return _cell(d.get("%s|%s|%s" % (model, key_alias,
-                                     window_id(model, c["window"])), 0))[idx]
+    c = _cap_of(model)
+    return _cell(_load().get(_state_key(model, key_alias, c), 0))[idx]
 
 
 def spent_today(model, key_alias=""):
